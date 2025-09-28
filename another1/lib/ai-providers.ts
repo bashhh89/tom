@@ -1,4 +1,6 @@
 import { logger } from './logger';
+import { OpenRouterProvider } from './openrouter-provider';
+import { ZAIProvider } from './zai-provider';
 
 // AI Provider Interface
 export interface AIProvider {
@@ -331,7 +333,7 @@ export class GroqProvider implements AIProvider {
         body.response_format = { type: "json_object" };
     }
 
-    const response = await fetch('https://api.groq.com/v1/chat/completions', {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.apiKey}` },
       body: JSON.stringify(body)
@@ -391,7 +393,7 @@ export class GoogleProvider implements AIProvider {
 
   constructor(apiKey?: string, model?: string) {
     this.apiKey = apiKey || process.env.GOOGLE_API_KEY || '';
-    this.model = model || 'gemini-2.0-flash'; // Changed to gemini-2.0-flash
+    this.model = model || 'gemini-2.5-flash'; // Changed to gemini-2.5-flash
     logger.debug(`Initializing Google Gemini provider with model: ${this.model}. API Key present: ${!!this.apiKey}`);
     if (!this.apiKey) {
       logger.warn('Google Gemini provider initialized without API key. It will not be available.');
@@ -502,329 +504,141 @@ export class GoogleProvider implements AIProvider {
   async generateReport(systemPrompt: string, userPrompt: string): Promise<string> {
     logger.info('Google Gemini: Generating report...');
     // Ensure systemPrompt does NOT ask for JSON for reports.
-    return this._generateContent(systemPrompt, userPrompt, 4000, false) as Promise<string>;
+    return this._generateContent(systemPrompt, userPrompt, 8192, false) as Promise<string>;
   }
 
   async generateNextQuestion(systemPrompt: string, userPrompt: string): Promise<any> {
     logger.info('Google Gemini: Generating next question...');
     // Ensure systemPrompt for questions DOES ask for JSON.
-    // Increased maxOutputTokens from 1500 to 2048
-    return this._generateContent(systemPrompt, userPrompt, 2048, true);
+    return this._generateContent(systemPrompt, userPrompt, 4096, true);
   }
 }
 
 // AI Provider Manager
 export class AIProviderManager {
-  private googleProvider: GoogleProvider | undefined;
-  private openAIProvider: OpenAIProvider | undefined;
-  private groqProvider: GroqProvider | undefined;
-  private pollinationsProvider: PollinationsProvider | undefined; // Keep for other potential uses
+  private openAIProvider: OpenAIProvider | undefined; // Primary
+  private pollinationsProvider: PollinationsProvider | undefined; // Fallback
   private lastReportProviderName: string | undefined;
   private lastQuestionProviderName: string | undefined;
-  private useGeorgeKey: boolean;
 
   constructor() {
     logger.debug('============================================');
     logger.debug('AIProviderManager: INITIALIZING PROVIDER MANAGER');
     logger.debug('============================================');
-    
-    // Output environment variables status without revealing sensitive information
-    logger.debug('Environment Variables Status:');
-    logger.debug(`USE_GEORGE_KEY: ${process.env.USE_GEORGE_KEY}`);
-    logger.debug(`OPENAI_API_KEY Present: ${process.env.OPENAI_API_KEY ? 'true' : 'false'}`);
-    logger.debug(`OPENAI_MODEL: ${process.env.OPENAI_MODEL || 'gpt-4o'}`);
-    logger.debug('============================================');
-    
-    // Check if USE_GEORGE_KEY is set to true to enforce OpenAI usage
-    this.useGeorgeKey = process.env.USE_GEORGE_KEY === 'true';
-    logger.debug(`Initializing AI Provider Manager (UseGeorgeKey: ${this.useGeorgeKey ? 'true - OpenAI Required' : 'false - OpenAI Still Required'})...`);
-    
-    // Initialize OpenAI Provider with more robust error handling
-    try {
-      const openAIAPIKey = process.env.OPENAI_API_KEY || '';
-      const openAIModel = process.env.OPENAI_MODEL || 'gpt-4o';
-      
-      // Log information without exposing the actual key
-      if (openAIAPIKey) {
-        logger.debug(`FORCING CORRECT API KEY: Using correct key with length ${openAIAPIKey.length}`);
-        
-        // Create the OpenAI provider instance
-        this.openAIProvider = new OpenAIProvider(openAIAPIKey, openAIModel);
-        logger.debug(`OpenAIProvider: Using API key - First chars: ${openAIAPIKey.substring(0, 7)}..., Last chars: ...${openAIAPIKey.substring(openAIAPIKey.length - 4)}`);
-        logger.debug(`OpenAI Provider instance created with FORCED KEY (Required for Questions and Reports). Model: ${openAIModel}`);
-      } else {
-        // Critical error for missing API key
-        logger.error('CRITICAL ERROR: OPENAI_API_KEY not found. OpenAI provider is REQUIRED for question and report generation.');
-        logger.error('Available environment variables:', Object.keys(process.env).filter(key => !key.startsWith('npm_')).join(', '));
-        
-        // Even with missing key, create provider with empty key for consistent code handling
-        // The provider's isAvailable() method will properly handle this case
-        logger.warn('Creating OpenAI provider with empty key for consistent error handling');
-        this.openAIProvider = new OpenAIProvider('', openAIModel);
+
+    logger.debug('Initializing AI providers with OpenAI as primary...');
+
+    // Initialize OpenAI Provider as primary if API key is provided
+    const openAIAPIKey = process.env.OPENAI_API_KEY || '';
+    if (openAIAPIKey) {
+      try {
+        this.openAIProvider = new OpenAIProvider(openAIAPIKey, process.env.OPENAI_MODEL || 'gpt-4o');
+        logger.debug('OpenAI Provider initialized as primary');
+      } catch (e: any) {
+        logger.warn('OpenAI primary provider initialization failed:', e.message);
       }
-    } catch (e: any) {
-      logger.error("CRITICAL ERROR: Failed to instantiate OpenAIProvider:", e.message);
-      // Avoid null provider by creating one with empty credentials
-      // This ensures consistent code paths even when initialization fails
-      logger.warn('Creating fallback OpenAI provider with empty key');
-      this.openAIProvider = new OpenAIProvider('', process.env.OPENAI_MODEL || 'gpt-4o');
     }
 
-    // Initialize Google Gemini Provider (Primary)
-    const googleApiKey = process.env.GOOGLE_API_KEY;
-    const googleModel = process.env.GOOGLE_MODEL || 'gemini-2.0-flash'; // Changed to gemini-2.0-flash
-    if (googleApiKey) {
-      try {
-        this.googleProvider = new GoogleProvider(googleApiKey, googleModel);
-        logger.debug('Google Gemini Provider instance created (Primary).');
-      } catch (e: any) {
-        logger.error("Failed to instantiate GoogleProvider:", e.message);
-      }
-    } else {
-      logger.warn('GOOGLE_API_KEY not found. Google Gemini provider (Primary) will not be available.');
-    }
-
-    // Initialize Groq Provider (Tertiary Fallback or specific use)
-    if (process.env.GROQ_API_KEY) {
-      try {
-        this.groqProvider = new GroqProvider(process.env.GROQ_API_KEY, process.env.DEV_AI_MODEL || 'qwen-qwq-32b');
-        logger.debug('Groq Provider instance created (available if needed).');
-      } catch (e: any) {
-        logger.error("Failed to instantiate GroqProvider:", e.message);
-      }
-    } else {
-      logger.warn('GROQ_API_KEY not found. Groq provider will not be available.');
-    }
-    
-    // Initialize Pollinations Provider (available if needed)
+    // Initialize Pollinations Provider as fallback
     try {
       this.pollinationsProvider = new PollinationsProvider();
-      logger.debug('Pollinations Provider instance created (available if needed).');
+      logger.debug('Pollinations Provider initialized as fallback (FREE)');
     } catch (e: any) {
-        logger.error("Failed to instantiate PollinationsProvider:", e.message);
+      logger.error("Failed to instantiate PollinationsProvider:", e.message);
+      this.pollinationsProvider = new PollinationsProvider();
     }
-    logger.debug('AIProviderManager constructor finished.');
+
+    logger.debug('AIProviderManager constructor finished - OpenAI primary, Pollinations fallback');
   }
-  
+
   async initialize(): Promise<void> {
-    logger.debug('Verifying AI provider availability (Google Primary)...');
-    let primaryProviderReady = false;
+    logger.debug('Verifying AI provider availability (OpenAI Primary)...');
 
-    if (this.googleProvider) {
-        logger.debug("Checking Google Gemini provider (Primary)...");
-        if (await this.googleProvider.isAvailable()) {
-            primaryProviderReady = true;
-            logger.debug('Google Gemini provider is available (Primary for questions and reports).');
-        } else {
-            logger.warn('Google Gemini provider (Primary) configured but not available.');
-        }
+    // Check OpenAI (Primary - Paid)
+    if (this.openAIProvider) {
+      if (await this.openAIProvider.isAvailable()) {
+        logger.debug('OpenAI provider is available (Primary - Paid).');
+      } else {
+        logger.warn('OpenAI provider configured but not available.');
+      }
     }
 
-    if (!primaryProviderReady && this.openAIProvider) {
-        logger.debug("Primary (Google) not available. Checking OpenAI provider (Fallback)...");
-        if (await this.openAIProvider.isAvailable()) {
-            primaryProviderReady = true; // Fallback becomes primary if Google fails
-            logger.debug('OpenAI provider is available (Fallback for questions and reports).');
-        } else {
-             logger.warn('OpenAI provider (Fallback) configured but not available.');
-        }
-    }
-    
-    if (!primaryProviderReady) {
-        logger.error('CRITICAL: NO primary or fallback (Google/OpenAI) provider is available or configured! Core functionality will be affected.');
-    }
-    
-    if (this.groqProvider) {
-      if (await this.groqProvider.isAvailable()) logger.debug('Groq provider is available (Tertiary).');
-      else logger.warn('Groq provider configured but not available.');
-    }
+    // Check Pollinations fallback
     if (this.pollinationsProvider) {
-      if (await this.pollinationsProvider.isAvailable()) logger.debug('Pollinations provider is available.');
-      else logger.warn('Pollinations provider configured but not available.');
+      if (await this.pollinationsProvider.isAvailable()) {
+        logger.debug('Pollinations provider is available (Fallback - FREE).');
+      } else {
+        logger.warn('Pollinations provider configured but not available.');
+      }
     }
+
     logger.debug('AI Provider availability check complete.');
   }
-  
+
   async generateNextQuestion(systemPrompt: string, userPrompt: string): Promise<any> {
     this.lastQuestionProviderName = undefined;
 
-    logger.debug('AI Manager: Attempting question generation with fallback support');
-
-    // Try OpenAI first (primary)
+    // Use OpenAI (Paid) as primary
     if (this.openAIProvider) {
-      logger.debug('AI Manager: Checking OpenAI availability for question generation...');
-      const isOpenAIAvailable = await this.openAIProvider.isAvailable();
-      logger.debug(`AI Manager: OpenAI availability result: ${isOpenAIAvailable}`);
+      try {
+        logger.debug('AIProviderManager: Using OpenAI for question generation (Primary).');
+        const question = await this.openAIProvider.generateNextQuestion(systemPrompt, userPrompt);
+        this.lastQuestionProviderName = this.openAIProvider.name;
+        logger.debug('AIProviderManager: OpenAI question generation SUCCESSFUL');
+        return question;
+      } catch (error: any) {
+        logger.warn('AIProviderManager: OpenAI question generation failed, trying fallback:', error.message);
+      }
+    }
 
-      if (isOpenAIAvailable) {
-        logger.debug('AI Manager: Using OpenAI for next question.');
-        try {
-          const question = await this.openAIProvider.generateNextQuestion(systemPrompt, userPrompt);
-          this.lastQuestionProviderName = this.openAIProvider.name;
-          logger.debug('AI Manager: OpenAI question generation SUCCESSFUL');
-          return question;
-        } catch (error: any) {
-          logger.warn('AI Manager: OpenAI failed to generate next question:', error.message);
-
-          // Check if it's a quota error - if so, try Pollinations fallback
-          if (error.message.includes('insufficient_quota') || error.message.includes('429') ||
-              error.message.includes('quota') || error.message.includes('billing')) {
-            logger.debug('AI Manager: OpenAI quota exceeded, trying Pollinations fallback...');
-
-            if (this.pollinationsProvider && await this.pollinationsProvider.isAvailable()) {
-              try {
-                logger.debug('AI Manager: Using Pollinations fallback for next question.');
-                const question = await this.pollinationsProvider.generateNextQuestion(systemPrompt, userPrompt);
-                this.lastQuestionProviderName = this.pollinationsProvider.name;
-                logger.debug('AI Manager: Pollinations question generation SUCCESSFUL');
-                return question;
-              } catch (pollinationsError: any) {
-                logger.error('AI Manager: Pollinations fallback also failed:', pollinationsError.message);
-              }
-            } else {
-              logger.warn('AI Manager: Pollinations provider not available for fallback');
-            }
-          }
-
-          // If not a quota error or fallback failed, throw the original error
-          throw new Error(`OpenAI question generation failed: ${error.message}`);
-        }
-      } else {
-        logger.warn('AI Manager: OpenAI is not available, trying Pollinations fallback...');
-
-        // Try Pollinations as fallback when OpenAI is not available
-        if (this.pollinationsProvider && await this.pollinationsProvider.isAvailable()) {
-          try {
-            logger.debug('AI Manager: Using Pollinations fallback for next question.');
-            const question = await this.pollinationsProvider.generateNextQuestion(systemPrompt, userPrompt);
-            this.lastQuestionProviderName = this.pollinationsProvider.name;
-            logger.debug('AI Manager: Pollinations question generation SUCCESSFUL');
-            return question;
-          } catch (pollinationsError: any) {
-            logger.error('AI Manager: Pollinations fallback also failed:', pollinationsError.message);
-            throw new Error(`All providers failed for question generation. Last error: ${pollinationsError.message}`);
-          }
-        } else {
-          logger.error('AI Manager: Neither OpenAI nor Pollinations provider available for question generation.');
-          throw new Error('No AI providers available for question generation');
-        }
+    // Fallback to Pollinations if OpenAI fails
+    if (this.pollinationsProvider) {
+      try {
+        logger.debug('AIProviderManager: Using Pollinations fallback for question generation (FREE).');
+        const question = await this.pollinationsProvider.generateNextQuestion(systemPrompt, userPrompt);
+        this.lastQuestionProviderName = this.pollinationsProvider.name;
+        logger.debug('AIProviderManager: Pollinations question generation SUCCESSFUL (fallback)');
+        return question;
+      } catch (error: any) {
+        logger.error('AIProviderManager: Pollinations fallback question generation failed:', error.message);
+        throw new Error(`Question generation failed: ${error.message}`);
       }
     } else {
-      logger.error('AI Manager: OpenAI provider not initialized, trying Pollinations fallback...');
-
-      // Try Pollinations as fallback when OpenAI is not initialized
-      if (this.pollinationsProvider && await this.pollinationsProvider.isAvailable()) {
-        try {
-          logger.debug('AI Manager: Using Pollinations fallback for next question.');
-          const question = await this.pollinationsProvider.generateNextQuestion(systemPrompt, userPrompt);
-          this.lastQuestionProviderName = this.pollinationsProvider.name;
-          logger.debug('AI Manager: Pollinations question generation SUCCESSFUL');
-          return question;
-        } catch (pollinationsError: any) {
-          logger.error('AI Manager: Pollinations fallback also failed:', pollinationsError.message);
-          throw new Error(`All providers failed for question generation. Last error: ${pollinationsError.message}`);
-        }
-      } else {
-        logger.error('AI Manager: No providers available for question generation.');
-        throw new Error('No AI providers available for question generation');
-      }
+      throw new Error('No AI providers available for question generation');
     }
   }
 
   async generateReport(systemPrompt: string, userPrompt: string): Promise<string> {
-    logger.debug('AIProviderManager: Attempting to generate report with fallback support.');
     this.lastReportProviderName = undefined;
 
-    // Try OpenAI first (primary)
-    if (this.openAIProvider && await this.openAIProvider.isAvailable()) {
+    // Use OpenAI (Paid) as primary
+    if (this.openAIProvider) {
       try {
-        logger.debug('AIProviderManager: Using OpenAI for report generation (priority).');
+        logger.debug('AIProviderManager: Using OpenAI for report generation (Primary).');
         const report = await this.openAIProvider.generateReport(systemPrompt, userPrompt);
         this.lastReportProviderName = this.openAIProvider.name;
         logger.debug('AIProviderManager: OpenAI report generation SUCCESSFUL');
         return report;
-        } catch (error: any) {
-          const errorMessage = error?.message || 'Unknown error';
-          logger.warn('AIProviderManager: OpenAI report generation failed:', errorMessage);
-
-        // Check if it's a quota error - if so, try Pollinations fallback
-        if (error.message.includes('insufficient_quota') || error.message.includes('429') ||
-            error.message.includes('quota') || error.message.includes('billing')) {
-          logger.debug('AIProviderManager: OpenAI quota exceeded, trying Pollinations fallback...');
-
-          if (this.pollinationsProvider && await this.pollinationsProvider.isAvailable()) {
-            try {
-              logger.debug('AIProviderManager: Using Pollinations fallback for report generation.');
-              const report = await this.pollinationsProvider.generateReport(systemPrompt, userPrompt);
-              this.lastReportProviderName = this.pollinationsProvider.name;
-              logger.debug('AIProviderManager: Pollinations report generation SUCCESSFUL');
-              return report;
-            } catch (pollinationsError: any) {
-              logger.error('AIProviderManager: Pollinations fallback also failed:', pollinationsError.message);
-            }
-          } else {
-            logger.warn('AIProviderManager: Pollinations provider not available for fallback');
-          }
-        }
-
-        // If not a quota error or fallback failed, try Google Gemini
-        logger.debug('AIProviderManager: Trying Google Gemini fallback...');
+      } catch (error: any) {
+        logger.warn('AIProviderManager: OpenAI report generation failed, trying fallback:', error.message);
       }
-    } else {
-      logger.warn('AIProviderManager: OpenAI not available, trying other providers...');
     }
 
-    // Fallback to Google Gemini for reports
-    if (this.googleProvider && await this.googleProvider.isAvailable()) {
+    // Fallback to Pollinations if OpenAI fails
+    if (this.pollinationsProvider) {
       try {
-        logger.debug('AIProviderManager: Using Google Gemini for report generation.');
-        const report = await this.googleProvider.generateReport(systemPrompt, userPrompt);
-        this.lastReportProviderName = this.googleProvider.name;
-        logger.debug('AIProviderManager: Google Gemini report generation SUCCESSFUL');
+        logger.debug('AIProviderManager: Using Pollinations fallback for report generation (FREE).');
+        const report = await this.pollinationsProvider.generateReport(systemPrompt, userPrompt);
+        this.lastReportProviderName = this.pollinationsProvider.name;
+        logger.debug('AIProviderManager: Pollinations report generation SUCCESSFUL (fallback)');
         return report;
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        logger.error('AIProviderManager: Google Gemini report generation failed:', errorMessage);
-
-        // If Google Gemini also fails, try Pollinations as final fallback
-        logger.debug('AIProviderManager: Google Gemini failed, trying Pollinations as final fallback...');
-
-        if (this.pollinationsProvider && await this.pollinationsProvider.isAvailable()) {
-          try {
-            logger.debug('AIProviderManager: Using Pollinations final fallback for report generation.');
-            const report = await this.pollinationsProvider.generateReport(systemPrompt, userPrompt);
-            this.lastReportProviderName = this.pollinationsProvider.name;
-            logger.debug('AIProviderManager: Pollinations final fallback report generation SUCCESSFUL');
-            return report;
-          } catch (pollinationsError: any) {
-            logger.error('AIProviderManager: Pollinations final fallback also failed:', pollinationsError.message);
-          }
-        } else {
-          logger.warn('AIProviderManager: Pollinations provider not available for final fallback');
-        }
+      } catch (error: any) {
+        logger.error('AIProviderManager: Pollinations fallback report generation failed:', error.message);
+        throw new Error(`Report generation failed: ${error.message}`);
       }
     } else {
-      logger.warn('AIProviderManager: Google Gemini not available, trying Pollinations...');
-
-      // Try Pollinations as fallback when Google Gemini is not available
-      if (this.pollinationsProvider && await this.pollinationsProvider.isAvailable()) {
-        try {
-          logger.debug('AIProviderManager: Using Pollinations fallback for report generation.');
-          const report = await this.pollinationsProvider.generateReport(systemPrompt, userPrompt);
-          this.lastReportProviderName = this.pollinationsProvider.name;
-          logger.debug('AIProviderManager: Pollinations report generation SUCCESSFUL');
-          return report;
-        } catch (pollinationsError: any) {
-          logger.error('AIProviderManager: Pollinations fallback also failed:', pollinationsError.message);
-        }
-      } else {
-        logger.error('AIProviderManager: No providers available for report generation.');
-        throw new Error('No AI providers available for report generation');
-      }
+      throw new Error('No AI providers available for report generation');
     }
-
-    logger.error('AIProviderManager: All configured AI providers failed for report generation.');
-    throw new Error('All configured AI providers for report generation failed or are unavailable.');
   }
 
   getReportProviderName(): string | undefined {

@@ -52,8 +52,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // Use the environment variable with fallback to ahmadbasheerr@gmail.com
-    const recipientEmail = process.env.LEAD_NOTIFICATION_EMAIL || 'ahmadbasheerr@gmail.com';
+    // Use the environment variable with fallback to george@socialgarden.com.au
+    const recipientEmail = process.env.LEAD_NOTIFICATION_EMAIL || 'george@socialgarden.com.au';
     
     // Determine email subject based on lead type
     const emailSubject = type === 'leadCapture' 
@@ -83,7 +83,7 @@ export async function POST(request: Request) {
     if (resend) {
       try {
         const data = await resend.emails.send({
-          from: 'AI Scorecard <ahmadbasheerr@gmail.com>',
+          from: 'AI Scorecard <noreply@socialgarden.com.au>',
           to: [recipientEmail],
           subject: emailSubject,
           html: emailHtml,

@@ -1,69 +1,129 @@
-# Project Handover Document: Social Garden AI Efficiency Scorecard & Learning Hub
+# AI Scorecard Results Page Redirect Issue - Handover Document
 
-This document provides an overview of the Social Garden AI Efficiency Scorecard and Learning Hub project, intended for developers who will be working on the codebase.
+## 📋 Problem Description
 
-## 1. Project Overview
+**Issue**: After completing the 20-question AI assessment and filling out the lead capture form, users are being redirected back to the home page instead of seeing their results page.
 
-The Social Garden AI Efficiency Scorecard is a Next.js application designed to assess an organization's AI readiness through a multi-phase questionnaire. It generates a personalized report with key findings, recommendations, and a learning path. The integrated Learning Hub provides educational resources, including mini-courses and templates, related to AI adoption and efficiency.
+**Expected Flow**:
+1. User completes 20 questions
+2. Lead capture form appears
+3. User fills out form
+4. Report generates and user navigates to `/scorecard/results`
+5. User sees their personalized AI scorecard results
 
-## 2. Technical Stack
+**Actual Flow**:
+1. User completes 20 questions ✅
+2. Lead capture form appears ✅
+3. User fills out form ✅
+4. Report generates and user navigates to `/scorecard/results` ✅
+5. **User gets redirected back to home page** ❌
 
-*   **Framework:** Next.js (App Router)
-*   **Language:** TypeScript
-*   **Frontend:** React
-*   **Styling:** Tailwind CSS
-*   **AI Integration:** Pollinations.AI (used for AI processing, e.g., report generation)
-*   **Data Management:** Markdown files for content (`content/`), data structures in `lib/learningHubData.ts`, potential future integration with databases/APIs (e.g., Firebase).
-*   **Markdown Rendering:** `react-markdown` with `remark-gfm` and `rehype-raw`.
-*   **Package Manager:** pnpm
+## 🔍 Root Cause Analysis
 
-## 3. Project Structure
+The issue appears to be a **state management conflict** between the main page component and the results page component:
 
-Key directories and their purpose:
+1. **Main Page Component** (`/app/page.tsx`) - Manages the overall application state
+2. **Results Page Wrapper** (`/app/scorecard/results/page.tsx`) - Handles results display
+3. **Results Page Component** (`/app/scorecard/results/NewResultsPage.tsx`) - Displays the actual results
 
-*   `app/`: Contains application routes and pages. Dynamic routes like `app/learning-hub/course/[id]/page.tsx` and `app/learning-hub/templates/[id]/page.tsx` handle displaying individual courses and templates. API routes are in `app/api/`.
-*   `components/`: Reusable React components, organized by feature area (e.g., `components/scorecard/`, `components/learning-hub/`).
-*   `lib/`: Utility functions and libraries, including data definitions (`learningHubData.ts`), markdown processing (`markdownUtils.ts`), and AI provider integration (`ai-providers.ts`).
-*   `content/`: Markdown files for mini-course and template content.
-*   `public/`: Static assets (images, etc.).
+**Suspected Cause**: The main page component is resetting its state back to `industrySelection` even when the user is viewing the results page, causing the entire application to revert to the initial state.
 
-## 4. Key Features
+## 🛠️ What We've Tried
 
-*   **AI Efficiency Scorecard:** Multi-phase assessment, dynamic questioning, AI "thinking" display, personalized report generation (Overall Tier, Key Findings, Action Plan, Benchmarks).
-*   **Learning Hub:** Collection of mini-courses and templates on AI topics.
-*   **Dynamic Content Rendering:** Courses and templates are rendered from markdown files.
-*   **Interactive Elements:** Some components include interactive features (e.g., the step-by-step display for quick wins).
-*   **Lead Capture:** (Planned) Integration for capturing user information.
-*   **PDF Export:** (Planned) Functionality to download reports as PDFs.
+### Attempt 1: Results Page Wrapper Fix
+- **File**: `another1/app/scorecard/results/page.tsx`
+- **Approach**: Modified the results page wrapper to always proceed to results if report data exists
+- **Result**: Still redirecting
 
-## 5. Data Flow
+### Attempt 2: Results Page Data Loading Fix
+- **File**: `another1/app/scorecard/results/NewResultsPage.tsx`
+- **Approach**: Added retry mechanism to wait for data to be available instead of immediately redirecting
+- **Result**: Still redirecting
 
-*   Learning Hub content is primarily sourced from markdown files in the `content/` directory.
-*   Metadata about courses and templates is defined in `lib/learningHubData.ts`.
-*   Markdown content is fetched and processed using functions in `lib/markdownUtils.ts`.
-*   AI processing for report generation is handled via API routes (`app/api/scorecard-ai/route.ts`) interacting with the Pollinations.AI service.
+### Attempt 3: Main Page State Management Fix
+- **File**: `another1/app/page.tsx`
+- **Approach**: Added URL path monitoring to prevent state resets when on results page
+- **Result**: Still redirecting
 
-## 6. Styling
+### Attempt 4: Enhanced Debugging
+- **File**: `another1/app/scorecard/results/NewResultsPage.tsx`
+- **Approach**: Added comprehensive console logging to track data fetching process
+- **Result**: Still redirecting, but now we have better visibility
 
-*   The project uses Tailwind CSS for utility-first styling.
-*   Brand colors (sg-dark-teal, sg-bright-green, sg-light-mint) are defined and used throughout the components.
-*   The primary font is Plus Jakarta Sans, applied globally in `app/layout.tsx`.
-*   Markdown content is styled using the `@tailwindcss/typography` plugin (`prose` classes).
+## 📊 Current State
 
-## 7. Setup and Running
+### ✅ Working Components:
+- Assessment question generation (using Pollinations fallback)
+- Report generation (using Pollinations fallback)
+- Lead capture form submission
+- Navigation to `/scorecard/results`
+- Data storage in sessionStorage/localStorage
 
-1.  **Clone the repository:** `git clone [repository_url]`
-2.  **Navigate to the project directory:** `cd [project_directory]`
-3.  **Install dependencies:** `pnpm install`
-4.  **Set up environment variables:** Copy `.env.local.example` to `.env.local` and configure necessary variables (e.g., API keys).
-5.  **Run the development server:** `pnpm dev`
-6.  Access the application at `http://localhost:3000` (or the configured port).
+### ❌ Broken Components:
+- Results page display
+- State management between main page and results page
+- Prevention of redirect loops
 
-## 8. Important Notes
+### 🔧 Files Modified:
+1. `another1/app/page.tsx` - Added URL path monitoring
+2. `another1/app/scorecard/results/page.tsx` - Modified lead form logic
+3. `another1/app/scorecard/results/NewResultsPage.tsx` - Added retry mechanism and debugging
 
-*   The project uses Next.js App Router with a mix of Server and Client Components. Components using React Hooks (like `useState`, `useEffect`) must be marked with `"use client";` at the top of the file.
-*   Dynamic routes (`[id]`, `[slug]`) are used for courses and templates.
-*   Markdown content is parsed and rendered dynamically. Be mindful of the expected markdown structure when adding new content.
-*   The project is under active development, and some features (like full PDF export and lead capture) may still be in progress or require further implementation.
+## 🎯 Next Steps & Recommendations
 
-This document provides a starting point for understanding the project. Refer to the codebase and existing documentation (like `APIDOCS.md`, `README.md`) for more detailed information.
+### Immediate Actions Needed:
+
+1. **Check Browser Console Logs**: The enhanced debugging should now show exactly where the process fails
+2. **Verify Data Storage**: Confirm that report data is being saved to sessionStorage/localStorage
+3. **Test Results Page Isolation**: Try accessing `/scorecard/results` directly with existing data
+
+### Potential Solutions:
+
+1. **State Management Refactor**:
+   - Move state management out of main page component
+   - Use a global state management solution (Context API, Zustand, etc.)
+   - Prevent main page from interfering with results page
+
+2. **Results Page Isolation**:
+   - Make results page completely independent of main page state
+   - Handle all data fetching within the results page component
+   - Remove dependency on main page component
+
+3. **Navigation Fix**:
+   - Use Next.js router instead of `window.location.href`
+   - Ensure proper route handling
+   - Add loading states to prevent premature redirects
+
+### Debugging Commands:
+```bash
+# Check if data is in storage
+console.log('Report data:', sessionStorage.getItem('reportMarkdown'));
+console.log('Question history:', sessionStorage.getItem('questionAnswerHistory'));
+
+# Check current URL
+console.log('Current path:', window.location.pathname);
+```
+
+## 📝 Technical Notes
+
+- **API Status**: OpenAI quota exceeded, using Pollinations fallback (working)
+- **Database**: Firestore integration appears functional
+- **Storage**: sessionStorage/localStorage being used for data persistence
+- **Framework**: Next.js 13+ with App Router
+- **State Management**: Currently using React useState (problematic)
+
+## 🚨 Priority Level: HIGH
+
+This is a critical user experience issue that prevents users from seeing their assessment results. The application is functionally complete but has a major UX blocker.
+
+## 👥 Team Recommendations
+
+- **Frontend Developer**: Focus on state management and component isolation
+- **Full-Stack Developer**: Review navigation and routing logic
+- **QA Engineer**: Test the complete user flow and identify edge cases
+
+---
+
+**Last Updated**: September 20, 2025
+**Status**: 🔴 **CRITICAL - User cannot see results**
+**Next Action**: Review console logs from enhanced debugging

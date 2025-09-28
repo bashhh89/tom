@@ -226,13 +226,25 @@ export default function NewResultsPage({ initialUserName }: NewResultsPageProps 
       try {
         setIsLoading(true);
         setError(null);
-        
+
+        // Add browser console logging note
+        console.log("RESULTS PAGE: Starting data fetch process - Browser should show 'Loading Your AI Scorecard'");
+        console.log("RESULTS PAGE: If stuck at loading, check browser Network tab for failed API calls and Console for JavaScript errors");
+
+        // DEBUG: Log all initial conditions
+        console.log("RESULTS PAGE DEBUG: Initial state on load:");
+        console.log("  - URL:", typeof window !== 'undefined' ? window.location.href : 'N/A');
+        console.log("  - searchParams:", searchParams);
+        console.log("  - initialUserName:", initialUserName);
+        console.log("  - reportMarkdown current value:", !!reportMarkdown);
+        console.log("  - questionAnswerHistory current length:", questionAnswerHistory?.length || 0);
+
         // If we already have a userName from props, use it
         if (initialUserName && !userName) {
           console.log("RESULTS PAGE: Using initialUserName from props:", initialUserName);
           setUserName(initialUserName);
         }
-        
+
         // Get reportId from URL or storage
         let fetchedReportId: string | null = null;
 
@@ -240,33 +252,58 @@ export default function NewResultsPage({ initialUserName }: NewResultsPageProps 
           fetchedReportId = searchParams.get('reportId');
           console.log("RESULTS PAGE: Got reportId from URL params:", fetchedReportId);
         }
-        
+
         if (!fetchedReportId && typeof window !== 'undefined') {
           fetchedReportId = sessionStorage.getItem('currentReportID') || sessionStorage.getItem('reportId');
           if (!fetchedReportId) {
             fetchedReportId = localStorage.getItem('currentReportID') || localStorage.getItem('reportId');
           }
         }
-        
+
+        console.log("RESULTS PAGE: Final reportId:", fetchedReportId);
+
         if (!fetchedReportId) {
-          // Instead of throwing an error, redirect to home page to complete scorecard
-          console.log("RESULTS PAGE: No reportId found, redirecting to complete scorecard");
+          // No reportId found, try to use data from storage as fallback
+          console.log("RESULTS PAGE: No reportId found, checking session/local storage for data");
+
           if (typeof window !== 'undefined') {
-            // Add a small delay to ensure the console log is visible
-            setTimeout(() => {
-              window.location.href = '/';
-            }, 1000);
+            const sessionReportMarkdown = sessionStorage.getItem('reportMarkdown') || localStorage.getItem('reportMarkdown');
+            const sessionQuestionAnswerHistory = sessionStorage.getItem('questionAnswerHistory') || localStorage.getItem('questionAnswerHistory');
+            const sessionUserAITier = sessionStorage.getItem('userAITier') || sessionStorage.getItem('aiTier') || sessionStorage.getItem('tier') ||
+                                     localStorage.getItem('userAITier') || localStorage.getItem('aiTier') || localStorage.getItem('tier');
+            const sessionFinalScore = sessionStorage.getItem('finalScore') || localStorage.getItem('finalScore');
+            const sessionIndustry = sessionStorage.getItem('industry') || localStorage.getItem('industry');
+
+            console.log("Checking for report data in storage:", {
+              hasMarkdown: !!sessionReportMarkdown,
+              hasHistory: !!sessionQuestionAnswerHistory,
+              tier: sessionUserAITier
+            });
+
+            if (sessionReportMarkdown && sessionQuestionAnswerHistory) {
+              console.log("RESULTS PAGE: Report data found in storage, using as fallback");
+              // Use the data from storage
+              setReportMarkdown(sessionReportMarkdown);
+              setQuestionAnswerHistory(JSON.parse(sessionQuestionAnswerHistory));
+              setUserTier(sessionUserAITier);
+              setFinalScore(sessionFinalScore ? parseInt(sessionFinalScore) : null);
+              setUserIndustry(sessionIndustry);
+              setIsLoading(false);
+              return;
+            }
           }
-          setError("No scorecard results found. Please complete the AI Efficiency Scorecard first.");
+
+          // If we get here, no report data found in any location
+          console.log("RESULTS PAGE: No report data found anywhere");
+          setError('No scorecard results found. Please complete the AI Efficiency Scorecard first.');
+          setIsLoading(false);
           return;
+
         }
-        
-        // Set the report ID in state
-        setReportId(fetchedReportId);
-        
+
+        // We have a valid reportId, try to fetch from Firestore first
         console.log("RESULTS PAGE: Attempting to fetch report from Firestore with ID:", fetchedReportId);
-        
-        // Fetch report data from Firestore
+
         const reportRef = doc(db, 'scorecardReports', fetchedReportId);
         const reportSnapshot = await getDoc(reportRef);
         
@@ -1793,13 +1830,33 @@ export default function NewResultsPage({ initialUserName }: NewResultsPageProps 
                                     <span className="font-bold">{index + 1}</span>
                                   </div>
                                   <h4 className="font-semibold text-[#103138] group-hover:text-[#20E28F] transition-colors leading-tight pt-1">
-                                    <ReactMarkdown rehypePlugins={[rehypeRaw as any, rehypeSanitize as any]}>
+                                    <ReactMarkdown
+                                      rehypePlugins={[rehypeRaw as any, rehypeSanitize as any]}
+                                      components={{
+                                        p: ({ children }) => {
+                                          const containsList = React.Children.toArray(children).some(child =>
+                                            React.isValidElement(child) && ['ul', 'ol'].includes(child.type as string)
+                                          );
+                                          return containsList ? <div>{children}</div> : <p>{children}</p>;
+                                        },
+                                      }}
+                                    >
                                       {action}
                                     </ReactMarkdown>
                                   </h4>
                                 </div>
                                 <div className="ml-12 text-sm text-[#103138]/70">
-                                  <ReactMarkdown rehypePlugins={[rehypeRaw as any, rehypeSanitize as any]}>
+                                  <ReactMarkdown
+                                    rehypePlugins={[rehypeRaw as any, rehypeSanitize as any]}
+                                    components={{
+                                      p: ({ children }) => {
+                                        const containsList = React.Children.toArray(children).some(child =>
+                                          React.isValidElement(child) && ['ul', 'ol'].includes(child.type as string)
+                                        );
+                                        return containsList ? <div>{children}</div> : <p>{children}</p>;
+                                      },
+                                    }}
+                                  >
                                     {getRecommendationDescription(index, action)}
                                   </ReactMarkdown>
                                 </div>

@@ -1,0 +1,20 @@
+{
+  "name": "anythingllm-sow-skill",
+  "version": "1.0.0",
+  "description": "Generates Statements of Work and creates Google Sheets via Google Apps Script",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "anythingllm",
+    "sow",
+    "generator",
+    "google sheets"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "undici": "^5.22.1"
+  }
+}

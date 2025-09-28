@@ -1,0 +1,8 @@
+{
+  "name": "google-sheets-url-skill-dependencies",
+  "version": "1.0.0",
+  "description": "Dependencies for the skill",
+  "dependencies": {
+    "googleapis": "^105.0.0"
+  }
+}

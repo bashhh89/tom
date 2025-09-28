@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
-import { AIProviderManager } from '@/lib/ai-providers';
+import { AIProviderManager, OpenAIProvider } from '@/lib/ai-providers';
 import { logger } from '@/lib/logger';
 
 // Define ScorecardHistoryEntry interface for type safety
@@ -410,6 +410,8 @@ function debugTierCalculation() {
 }
 
 export async function POST(request: Request) {
+  const requestStartTime = Date.now();
+  logger.backend(`API Request started at ${new Date().toISOString()}`);
   const localAiManager = new AIProviderManager();
   try {
     // Parse and validate the request body with more robust error handling
@@ -447,6 +449,15 @@ export async function POST(request: Request) {
     const { action, currentPhaseName, industry, userName } = requestData;
     const history = Array.isArray(requestData.history) ? requestData.history : [];
 
+    // Validate that the industry is provided for all assessment-related actions
+    if (!industry || typeof industry !== 'string') {
+      logger.error('API Error: "industry" field is missing or invalid in the request body.');
+      return NextResponse.json(
+        { error: 'Missing required field', message: 'The "industry" field is required and must be a string.' },
+        { status: 400 }
+      );
+    }
+
     // Check if this is a report generation request
     if (action === 'generateReport') {
       return handleReportGeneration(history as ScorecardHistoryEntry[], industry, userName, localAiManager);
@@ -469,6 +480,7 @@ export async function POST(request: Request) {
   }
 }
 
+
 async function handleReportGeneration(history: ScorecardHistoryEntry[], industry: string, userName: string | undefined, aiManagerInstance: AIProviderManager) {
   try {
     // Calculate the tier based on the weighted scoring logic
@@ -476,12 +488,12 @@ async function handleReportGeneration(history: ScorecardHistoryEntry[], industry
     const userAITier = determineTier(score);
 
     // Define rich persona descriptions and specific instructions based on the calculated tier (Part 2.1 & 2.2)
-    let personaDescription = "";
-    let personaInstructions = "";
-    let keyFindingsInstructions = "";
-    let actionPlanInstructions = "";
-    let benchmarksInstructions = "";
-    let learningPathInstructions = "";
+    let personaDescription: string;
+    let personaInstructions: string;
+    let keyFindingsInstructions: string;
+    let actionPlanInstructions: string;
+    let benchmarksInstructions: string;
+    let learningPathInstructions: string;
 
     if (userAITier === 'Dabbler') {
       personaDescription = "a Marketing Manager with basic AI understanding and limited practical application. They are aware of AI but have limited practical application, using basic tools for simple tasks like content ideas or grammar checks. They have no formal AI strategy and focus on immediate, tactical challenges. Their language reflects uncertainty or a basic understanding.";
@@ -515,101 +527,152 @@ async function handleReportGeneration(history: ScorecardHistoryEntry[], industry
       }
     }
 
-    // Create the system prompt for report generation, injecting the calculated tier and persona
-    const systemPrompt = `You are an expert AI consultant specializing in helping organizations assess and improve their AI maturity and efficiency. 
-${userName ? `You're preparing a personalized report for ${userName}${companyName ? ' at ' + companyName : ''}, who is ${personaDescription} in the ${industry} industry.` : `You're preparing a report for an organization${companyName ? ' named ' + companyName : ''} in the ${industry} industry, whose profile aligns with that of ${personaDescription}.`}
-Based on the assessment questions and answers provided, your task is to generate a comprehensive AI Efficiency Scorecard report tailored specifically for a **${userAITier} Marketing Manager** in the **${industry}** industry.
-Crucially, you MUST ONLY output the content of the report itself. DO NOT include any introductory or concluding remarks, disclaimers, signatures, or promotional content of any kind, including for other products or services.
-
-EXTREMELY IMPORTANT: DO NOT include ANY advertisements, promotional content, external links, redirects, or references to other AI tools or services (such as Homestyler, Wren AI, or any other pollinations.ai redirects). Your output must be 100% free of such content. The report MUST END with your Learning Path section, with NO additional content whatsoever.
-
-Generate the report adhering STRICTLY to the following structure and tailoring the content to the **${userAITier}** persona and **${industry}** industry. Follow these specific instructions for each section:
-
-## Overall Tier: ${userAITier}
-Include the user's final score here in the format "Final Score: [score]/100" on a new line.
-${companyName ? 'Include the company name "' + companyName + '" on a separate line.' : ''}
-
-## Key Findings
-${keyFindingsInstructions}
-
-**Strengths:**
-- CRITICALLY IMPORTANT: ALWAYS identify and list at least 3-5 key strengths, even for Dabbler tier. NEVER return "no strengths identified". For beginners, focus on positive starting points like "initiative in exploring AI," "awareness of potential," "willingness to learn," etc.
-- For each strength, provide a 1-2 sentence elaboration. Use specific examples and details from the user's answers. Focus on tangible capabilities or practices that position them well for AI adoption, and explain why each is valuable in the context of the ${industry} industry.
-
-**Weaknesses:**
-- List at least 3-5 key weaknesses or improvement areas, each with a brief explanation of its potential impact on AI efficiency or marketing/sales efforts. Be constructive but honest, and connect weaknesses to the ${industry} context where possible.
-
-## Strategic Action Plan
-${actionPlanInstructions}
-
-Provide a detailed, step-by-step action plan tailored to the user's tier and identified weaknesses. For this section:
-  - Give at least 3-5 primary actionable recommendations, each targeting a specific improvement area.
-  - For each recommendation, generate 2-4 specific, concrete sub-steps or examples of how the user could implement it.
-  - MANDATE the integration of industry-specific use cases and advice for the ${industry} sector.
-  - Ensure these actions are practical, detailed, and directly address the user's context.
-
-## Getting Started & Resources
-
-### Sample AI Goal-Setting Meeting Agenda
-1. Generate a 3-4 point sample agenda specifically for the ${industry} sector, focusing on relevant AI adoption priorities.
-2. Include specific discussion topics and measurable outcomes/next steps.
-
-### Example Prompts for ${industry} Marketing Managers
-- Create 2-3 actual example prompts that a marketing manager in ${industry}
-- Format as "PROMPT: [actual prompt text]" and "USE CASE: [brief explanation]".
-
-### Basic AI Data Audit Process Outline
-1. Outline 3-4 key steps for conducting a basic AI data audit specifically relevant to ${industry} organizations.
-
-## Illustrative Benchmarks
-${benchmarksInstructions}
-
-For the ${industry} industry, provide detailed, industry-specific benchmarks for ALL three tiers. Make sure each benchmark is HIGHLY RELEVANT to the ${industry} sector, with specific examples of tools, practices, or use cases that would be meaningful to organizations in this industry. Each benchmark MUST include at least 2-3 specific percentage ranges, quantifiable metrics, or concrete examples that illustrate performance in the ${industry} sector:
-
-### Dabbler Tier Organizations in ${industry}
-- Describe 2-3 concrete, realistic examples of how "Dabbler" tier organizations in ${industry} typically approach AI integration.
-- Include specific tools, practices, or initial AI applications common at this tier in ${industry} firms.
-- Highlight clear "first steps" or "low-hanging fruit" that ${industry} organizations at this tier typically focus on.
-- Provide specific metrics where possible, such as: "Dabbler tier ${industry} firms typically allocate only X-Y% of IT budget to AI initiatives" or "Only Z% of ${industry} Dabblers have formalized AI governance structures"
-
-### Enabler Tier Organizations in ${industry}
-- Describe 2-3 concrete examples of how "Enabler" tier organizations in ${industry} deploy more sophisticated AI capabilities.
-- Include specific processes, tools, or metrics that differentiate them from Dabblers in the ${industry} sector.
-- Focus on organizational structures, data integration practices, or automation that empowers scalable AI use in ${industry}.
-- Provide specific metrics where possible, such as: "${industry} Enablers typically see X-Y% improvement in operational efficiency" or "Z% of ${industry} Enablers have integrated AI into core business processes"
-
-### Leader Tier Organizations in ${industry}
-- Describe 2-3 distinctive examples of how "Leader" tier organizations in ${industry} leverage advanced AI capabilities.
-- Include specific initiatives, technologies, or strategic approaches that define excellence in ${industry}-specific AI adoption.
-- Emphasize innovative practices that create significant competitive advantage in ${industry}, with quantifiable results.
-- Provide specific metrics where possible, such as: "Leading ${industry} organizations achieve X-Y% higher revenue growth" or "Z% of ${industry} Leaders embed AI in executive decision-making processes"
-
-IMPORTANT: After determining the user's tier, CONTEXTUALIZE these benchmarks by explicitly comparing where the organization currently stands versus the next tier they could aspire to. For example:
-- If they're a "Dabbler", highlight what specifically separates them from "Enablers" in ${industry} with concrete metrics.
-- If they're an "Enabler", outline what specific steps with quantifiable goals would help them reach "Leader" status in ${industry}.
-- If they're already a "Leader", emphasize what they should focus on maintaining/enhancing with specific performance targets to stay at the cutting edge in ${industry}.
-
-## Your Personalized AI Learning Path
-${learningPathInstructions}
-
-Based on your scorecard results, select 2-3 of the most relevant resources and provide a HIGHLY PERSONALIZED explanation for each.
-
-FINAL REMINDER: DO NOT add ANY additional content after the Learning Path section. DO NOT include any promotions, advertisements, disclaimers, or external links to services like Homestyler, Wren AI, or other tools. The report MUST END with your Learning Path content.`;
-
-    // Initialize AI provider manager if needed
-    await aiManagerInstance.initialize();
-    
-    // Use the AI provider manager to generate the report
-    const userPrompt = `Analyze the following assessment history for the ${industry} industry and generate the comprehensive Markdown report as instructed. IMPORTANT: Do NOT include any advertisements, promotional content, or external links in your response: ${JSON.stringify(history)}`;
-    
-    let reportMarkdown;
+    // Initialize AI provider with OpenAI for fallback system
+    let openAIProvider: OpenAIProvider | undefined;
     try {
-      reportMarkdown = await aiManagerInstance.generateReport(systemPrompt, userPrompt);
+      const openAIAPIKey = process.env.OPENAI_API_KEY;
+      if (openAIAPIKey) {
+        openAIProvider = new OpenAIProvider(openAIAPIKey);
+        logger.backend('OpenAI provider initialized for cascading fallback system');
+      } else {
+        logger.warn('OpenAI API key not available, fallback system will only use Pollinations');
+      }
     } catch (error) {
-      console.error('All AI providers failed:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Failed to generate report: ${errorMessage}`);
+      logger.warn('Failed to initialize OpenAI provider for fallback system:', error);
     }
+
+    // Define generateReport function with cascading fallback system
+    async function generateReport(sectionSystemPrompt: string, sectionUserPrompt: string): Promise<string> {
+      try {
+        logger.backend('=== STARTING CHAINING FALLBACK ATTEMPTS ===');
+
+        // Try OpenAI first (primary provider if available)
+        if (openAIProvider) {
+          try {
+            logger.backend('CASCADING FALLBACK: Attempting OpenAI provider...');
+            const openaiResult = await openAIProvider.generateReport(sectionSystemPrompt, sectionUserPrompt);
+            if (openaiResult && openaiResult.trim().length > 0) {
+              logger.backend('CASCADING FALLBACK: ✅ OpenAI provider succeeded');
+              return openaiResult;
+            } else {
+              logger.warn('CASCADING FALLBACK: ❌ OpenAI provider returned empty/invalid result');
+            }
+          } catch (error) {
+            logger.warn('CASCADING FALLBACK: ❌ OpenAI provider failed:', error instanceof Error ? error.message : String(error));
+          }
+        } else {
+          logger.backend('CASCADING FALLBACK: OpenAI provider not available, skipping to Pollinations');
+        }
+
+        // If OpenAI fails, try Pollinations (fallback 1)
+        if (aiManagerInstance) {
+          try {
+            logger.backend('CASCADING FALLBACK: Attempting Pollinations provider as fallback...');
+            const pollinationsResult = await aiManagerInstance.generateReport(sectionSystemPrompt, sectionUserPrompt);
+            if (pollinationsResult && pollinationsResult.trim().length > 0) {
+              logger.backend('CASCADING FALLBACK: ✅ Pollinations provider succeeded');
+              return pollinationsResult;
+            } else {
+              logger.warn('CASCADING FALLBACK: ❌ Pollinations provider returned empty/invalid result');
+            }
+          } catch (error) {
+            logger.warn('CASCADING FALLBACK: ❌ Pollinations provider failed:', error instanceof Error ? error.message : String(error));
+          }
+        }
+
+        // Add more fallbacks as needed
+        // if (geminiProvider) {
+        //   try {
+        //     logger.backend('CASCADING FALLBACK: Attempting Gemini provider as final fallback...');
+        //     const geminiResult = await geminiProvider.generateReport(sectionSystemPrompt, sectionUserPrompt);
+        //     if (geminiResult && geminiResult.success) {
+        //       logger.backend('CASCADING FALLBACK: ✅ Gemini provider succeeded');
+        //       return geminiResult.data;
+        //     }
+        //   } catch (error) {
+        //     logger.warn('CASCADING FALLBACK: ❌ Gemini provider failed:', error instanceof Error ? error.message : String(error));
+        //   }
+        // }
+
+        logger.error('CASCADING FALLBACK: ❌ All providers failed');
+        throw new Error('All providers failed to generate report section');
+      } catch (e) {
+        logger.error('CASCADING FALLBACK: Error in generateReport function:', e);
+        throw e;
+      }
+    }
+
+    // --- Refactored Report Generation by Section ---
+    logger.backend(`🎯 Starting report generation for tier: ${userAITier}, industry: ${industry}, user: ${userName || 'Anonymous'}`);
+    logger.backend(`📊 History contains ${history.length} answers for scoring and tier calculation`);
+
+    const reportSections = [
+      {
+        name: 'Overall Tier & Key Findings',
+        prompt: `## Overall Tier: ${userAITier}\nInclude the user's final score here in the format "Final Score: ${score}/100" on a new line.\n${companyName ? `Include the company name "${companyName}" on a separate line.` : ''}\n\n## Key Findings\n${keyFindingsInstructions}\n\n**Strengths:**\n- CRITICALLY IMPORTANT: ALWAYS identify and list at least 3-5 key strengths, even for Dabbler tier. NEVER return "no strengths identified". For beginners, focus on positive starting points like "initiative in exploring AI," "awareness of potential," "willingness to learn," etc.\n- For each strength, provide a 1-2 sentence elaboration. Use specific examples and details from the user's answers. Focus on tangible capabilities or practices that position them well for AI adoption, and explain why each is valuable in the context of the ${industry} industry.\n\n**Weaknesses:**\n- List at least 3-5 key weaknesses or improvement areas, each with a brief explanation of its potential impact on AI efficiency or marketing/sales efforts. Be constructive but honest, and connect weaknesses to the ${industry} context where possible.`
+      },
+      {
+        name: 'Strategic Action Plan',
+        prompt: `## Strategic Action Plan\n${actionPlanInstructions}\n\nProvide a detailed, step-by-step action plan tailored to the user's tier and identified weaknesses. For this section:\n  - Give at least 3-5 primary actionable recommendations, each targeting a specific improvement area.\n  - For each recommendation, generate 2-4 specific, concrete sub-steps or examples of how the user could implement it.\n  - MANDATE the integration of industry-specific use cases and advice for the ${industry} sector.\n  - Ensure these actions are practical, detailed, and directly address the user's context.`
+      },
+      {
+        name: 'Getting Started & Resources',
+        prompt: `## Getting Started & Resources\n\n### Sample AI Goal-Setting Meeting Agenda\n1. Generate a 3-4 point sample agenda specifically for the ${industry} sector, focusing on relevant AI adoption priorities.\n2. Include specific discussion topics and measurable outcomes/next steps.\n\n### Example Prompts for ${industry} Marketing Managers\n- Create 2-3 actual example prompts that a marketing manager in ${industry}\n- Format as "PROMPT: [actual prompt text]" and "USE CASE: [brief explanation]".\n\n### Basic AI Data Audit Process Outline\n1. Outline 3-4 key steps for conducting a basic AI data audit specifically relevant to ${industry} organizations.`
+      },
+      {
+        name: 'Illustrative Benchmarks',
+        prompt: `## Illustrative Benchmarks\n${benchmarksInstructions}\n\nFor the ${industry} industry, provide detailed, industry-specific benchmarks for ALL three tiers. Make sure each benchmark is HIGHLY RELEVANT to the ${industry} sector, with specific examples of tools, practices, or use cases that would be meaningful to organizations in this industry. Each benchmark MUST include at least 2-3 specific percentage ranges, quantifiable metrics, or concrete examples that illustrate performance in the ${industry} sector.\n\n### Dabbler Tier Organizations in ${industry}\n- Describe 2-3 concrete, realistic examples of how "Dabbler" tier organizations in ${industry} typically approach AI integration.\n- Include specific tools, practices, or initial AI applications common at this tier in ${industry} firms.\n- Highlight clear "first steps" or "low-hanging fruit" that ${industry} organizations at this tier typically focus on.\n- Provide specific metrics where possible, such as: "Dabbler tier ${industry} firms typically allocate only X-Y% of IT budget to AI initiatives" or "Only Z% of ${industry} Dabblers have formalized AI governance structures"\n\n### Enabler Tier Organizations in ${industry}\n- Describe 2-3 concrete examples of how "Enabler" tier organizations in ${industry} deploy more sophisticated AI capabilities.\n- Include specific processes, tools, or metrics that differentiate them from Dabblers in the ${industry} sector.\n- Focus on organizational structures, data integration practices, or automation that empowers scalable AI use in ${industry}.\n- Provide specific metrics where possible, such as: "${industry} Enablers typically see X-Y% improvement in operational efficiency" or "Z% of ${industry} Enablers have integrated AI into core business processes"\n\n### Leader Tier Organizations in ${industry}\n- Describe 2-3 distinctive examples of how "Leader" tier organizations in ${industry} leverage advanced AI capabilities.\n- Include specific initiatives, technologies, or strategic approaches that define excellence in ${industry}-specific AI adoption.\n- Emphasize innovative practices that create significant competitive advantage in ${industry}, with quantifiable results.\n- Provide specific metrics where possible, such as: "Leading ${industry} organizations achieve X-Y% higher revenue growth" or "Z% of ${industry} Leaders embed AI in executive decision-making processes"\n\nIMPORTANT: After determining the user's tier, CONTEXTUALIZE these benchmarks by explicitly comparing where the organization currently stands versus the next tier they could aspire to. For example:\n- If they're a "Dabbler", highlight what specifically separates them from "Enablers" in ${industry} with concrete metrics.\n- If they're an "Enabler", outline what specific steps with quantifiable goals would help them reach "Leader" status in ${industry}.\n- If they're already a "Leader", emphasize what they should focus on maintaining/enhancing with specific performance targets to stay at the cutting edge in ${industry}.`
+      },
+      {
+        name: 'Personalized AI Learning Path',
+        prompt: `## Your Personalized AI Learning Path\n${learningPathInstructions}\n\nBased on your scorecard results, select 2-3 of the most relevant resources and provide a HIGHLY PERSONALIZED explanation for each.`
+      }
+    ];
+
+    let reportChunks: string[] = [];
+    const baseSystemPrompt = `You are an expert AI consultant specializing in helping organizations assess and improve their AI maturity and efficiency. ${userName ? `You're preparing a personalized report for ${userName}${companyName ? ' at ' + companyName : ''}, who is ${personaDescription} in the ${industry} industry.` : `You're preparing a report for an organization${companyName ? ' named ' + companyName : ''} in the ${industry} industry, whose profile aligns with that of ${personaDescription}.`} Based on the assessment questions and answers provided, your task is to generate a specific section of a comprehensive AI Efficiency Scorecard report. Crucially, you MUST ONLY output the content of the requested section. DO NOT include any introductory or concluding remarks, disclaimers, signatures, or promotional content of any kind. DO NOT include ANY advertisements, promotional content, external links, or redirects.`;
+
+    // Track timing for each section
+    const sectionsStartTime = Date.now();
+    logger.backend(`🚀 Starting sequential section generation for ${reportSections.length} sections. Total estimated time: ~60-120 seconds`);
+
+    for (let i = 0; i < reportSections.length; i++) {
+      const section = reportSections[i];
+      const sectionStartTime = Date.now();
+
+      logger.backend(`📝 [${i+1}/${reportSections.length}] Generating section: "${section.name}" - Started at ${new Date().toISOString()}`);
+
+      const sectionSystemPrompt = `${baseSystemPrompt}\n\nGenerate ONLY the following section:\n\n${section.prompt}`;
+      const userPrompt = `Analyze the following assessment history for the ${industry} industry and generate the requested Markdown report section as instructed. IMPORTANT: Do NOT include any advertisements, promotional content, or external links in your response: ${JSON.stringify(history).substring(0, 1000)}... [truncated]`; // Truncate for logging
+
+      try {
+        logger.backend(`⏳ [${section.name}] Calling AI provider...`);
+        const chunk = await generateReport(sectionSystemPrompt, userPrompt);
+        const sectionTime = Date.now() - sectionStartTime;
+
+        // Analyze chunk quality quickly
+        const hasContent = chunk && chunk.trim().length > 0;
+        const approxWords = chunk.split(/\s+/).length;
+        const approxLines = chunk.split('\n').length;
+
+        logger.backend(`✅ [${section.name}] COMPLETED - Duration: ${sectionTime/1000}s | Length: ~${approxWords} words, ${approxLines} lines | Size: ${chunk.length} chars`);
+
+        // Log progress indicator
+        const progress = Math.round(((i + 1) / reportSections.length) * 100);
+        logger.backend(`📊 Overall progress: ${progress}% (${i+1}/${reportSections.length} sections completed)`);
+
+        reportChunks.push(chunk);
+      } catch (error) {
+        const sectionTime = Date.now() - sectionStartTime;
+        logger.error(`❌ [${section.name}] FAILED - Duration: ${sectionTime/1000}s | Error: ${error instanceof Error ? error.message : String(error)}`);
+        reportChunks.push(`## ${section.name}\n\n> Error: This section could not be generated at this time. Please try again later.`);
+      }
+    }
+
+    const totalSectionsTime = Date.now() - sectionsStartTime;
+    logger.backend(`🏁 All sections completed! Total section generation time: ${totalSectionsTime/1000}s (avg: ${Math.round(totalSectionsTime/reportSections.length/1000 * 10)/10}s per section)`);
+
+    let reportMarkdown = reportChunks.join('\n\n');
 
     // Clean the report markdown to remove unwanted content
     reportMarkdown = cleanReportMarkdown(reportMarkdown);
@@ -644,7 +707,7 @@ FINAL REMINDER: DO NOT add ANY additional content after the Learning Path sectio
       userAITier: extractedTier, // Include the extracted tier in the response
       finalScore: finalScore, // Include the final score
       companyName: companyName || null, // Include the company name if found
-      systemPromptUsed: systemPrompt, // Include the final system prompt
+      systemPromptUsed: 'Sectional prompts were used for generation.', // Updated to reflect new method
       status: 'resultsGenerated',
       providerUsed: aiManagerInstance.getReportProviderName() || 'Unknown Report Provider' // Use instance
     }, { status: 200 });

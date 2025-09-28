@@ -451,7 +451,15 @@ export default function Home() {
   const router = useRouter();
 
   // --- TEMPORARY FOR TESTING RESULTS PAGE ---
-  const [currentStep, setCurrentStep] = useState<string>('industrySelection'); // Start at industry selection
+  // Initialize currentStep based on URL to prevent state resets on results page
+  const [currentStep, setCurrentStep] = useState<string>(() => {
+    if (typeof window !== 'undefined' && window.location.pathname.includes('/scorecard/results')) {
+      console.log('MAIN PAGE: Initializing currentStep to "results" based on URL');
+      return 'results';
+    }
+    console.log('MAIN PAGE: Initializing currentStep to "industrySelection"');
+    return 'industrySelection'; // Default start at industry selection
+  });
   // --- END TEMPORARY CHANGES ---
 
   // Define state for selected industry
@@ -686,29 +694,36 @@ export default function Home() {
   ]);
 
   // --- Stabilize generateReport (Dependency: selectedIndustry) ---
-  const generateReport = useCallback(async (finalHistory: ScorecardHistoryEntry[]) => {
+  const generateReport = useCallback(async (finalHistory: ScorecardHistoryEntry[], capturedName?: string) => {
     console.log(`FRONTEND: generateReport started at: ${new Date().toISOString()}`);
     const startTime = Date.now(); // For overall duration
-    
+
     console.log('>>> FRONTEND: Generating report for industry:', selectedIndustry);
     console.log('>>> FRONTEND: History length:', finalHistory.length);
 
     // Set loading state
     setIsGeneratingFinalReport(true);
 
-    // Safety timeout to prevent infinite loading - INCREASED FROM 60 TO 120 SECONDS
+    // Safety timeout to prevent infinite loading - SET TO 90 SECONDS for better UX
     const safetyTimeout = setTimeout(() => {
       console.error(`FRONTEND: Report generation timed out at: ${new Date().toISOString()}. Started at: ${new Date(startTime).toISOString()}`);
       setIsGeneratingFinalReport(false);
       // Show a user-friendly error message when this happens
-      alert('We apologize, but generating your report is taking longer than expected. Please try again.');
-    }, 120000); // 120 second timeout (increased from 60 seconds)
+      alert('We apologize, but generating your report is taking longer than expected. Our AI is working hard - please try again in a moment.');
+    }, 90000); // 90 second timeout for better balance between success and user experience
 
     try {
       // Generate report data
       console.log(`FRONTEND: Calling /api/scorecard-ai for full report at: ${new Date().toISOString()}`);
       const apiCallStartTime = Date.now();
-      
+
+      // Create AbortController for timeout handling
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+        console.warn('FRONTEND: Report generation timed out after 80 seconds, aborting...');
+      }, 80000); // 80 second timeout (backend has 90 second timeout, frontend waits a bit less)
+
       const response = await fetch('/api/scorecard-ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -716,10 +731,13 @@ export default function Home() {
           action: 'generateReport',
           history: finalHistory.slice(0, MAX_QUESTIONS),
           industry: selectedIndustry,
-          userName: leadName
+          userName: capturedName
         }),
+        signal: controller.signal, // Add abort signal
       });
-      
+
+      clearTimeout(timeoutId); // Clear the timeout if request succeeded
+
       console.log(`FRONTEND: Received response from /api/scorecard-ai at: ${new Date().toISOString()}. Duration: ${(Date.now() - apiCallStartTime) / 1000}s`);
 
       if (!response.ok) {
@@ -755,127 +773,214 @@ export default function Home() {
 
       // Prepare report data for Firestore
       const reportData = {
-        leadName: leadName || null,
+        leadName: capturedName || null,
         leadEmail: sessionStorage.getItem('scorecardLeadEmail') || null,
         leadCompany: sessionStorage.getItem('scorecardLeadCompany') || null,
         leadPhone: sessionStorage.getItem('scorecardLeadPhone') || null,
-        industry: selectedIndustry,
+        industry: selectedIndustry || null,
         userAITier: data.userAITier || 'Unknown',
         aiTier: data.userAITier || 'Unknown',
         tier: data.userAITier || 'Unknown', // Add explicit tier field
-        reportMarkdown: data.reportMarkdown,
-        questionAnswerHistory: finalHistory.slice(0, MAX_QUESTIONS),
-        systemPromptUsed: data.systemPromptUsed,
+        reportMarkdown: data.reportMarkdown || null,
+        questionAnswerHistory: finalHistory.slice(0, MAX_QUESTIONS) || [],
+        systemPromptUsed: data.systemPromptUsed || 'Unknown',
         createdAt: serverTimestamp(),
         overallStatus: 'completed'
       };
 
+      // Filter out any undefined values to prevent Firestore errors
+      // IMPORTANT: Don't filter out serverTimestamp() objects - they're special Firestore objects
+      const cleanReportDataRecursively = (obj: any): any => {
+        if (obj === null || obj === undefined) return null;
+        
+        // Handle serverTimestamp objects specially
+        if (obj && typeof obj === 'object' && obj._methodName === 'serverTimestamp') {
+          return obj;
+        }
+        
+        // Handle arrays
+        if (Array.isArray(obj)) {
+          return obj.filter(item => item !== undefined).map(item => cleanReportDataRecursively(item));
+        }
+        
+        // Handle regular objects
+        if (typeof obj === 'object') {
+          const cleaned: any = {};
+          for (const [key, value] of Object.entries(obj)) {
+            if (value !== undefined) {
+              const cleanedValue = cleanReportDataRecursively(value);
+              if (cleanedValue !== undefined) {
+                cleaned[key] = cleanedValue;
+              }
+            } else {
+              console.error(`>>> FRONTEND: Found undefined value for key: ${key}`);
+            }
+          }
+          return cleaned;
+        }
+        
+        return obj;
+      };
+
+      const cleanedReportData = cleanReportDataRecursively(reportData);
+
       // Log the full reportData object before saving to Firestore
       console.log('>>> FRONTEND: FULL REPORT DATA OBJECT BEING SAVED TO FIRESTORE:');
       console.log('reportData:', JSON.stringify({
-        ...reportData,
-        reportMarkdown: reportData.reportMarkdown?.substring(0, 100) + '... [truncated]',
-        questionAnswerHistory: `[${reportData.questionAnswerHistory.length} entries]`,
-        systemPromptUsed: reportData.systemPromptUsed?.substring(0, 100) + '... [truncated]'
+        ...cleanedReportData,
+        reportMarkdown: cleanedReportData.reportMarkdown?.substring(0, 100) + '... [truncated]',
+        questionAnswerHistory: `[${cleanedReportData.questionAnswerHistory?.length || 0} entries]`,
+        systemPromptUsed: cleanedReportData.systemPromptUsed?.substring(0, 100) + '... [truncated]',
+        createdAt: cleanedReportData.createdAt ? 'serverTimestamp object' : 'missing'
       }, null, 2));
+
+      // Additional logging to check for any remaining undefined values
+      console.log('>>> FRONTEND: Checking for undefined values in cleanedReportData:');
+      const checkForUndefined = (obj: any, path = ''): void => {
+        if (obj === undefined) {
+          console.error(`Found undefined value at path: ${path}`);
+          return;
+        }
+        if (obj && typeof obj === 'object' && !Array.isArray(obj) && obj._methodName !== 'serverTimestamp') {
+          Object.entries(obj).forEach(([key, value]) => {
+            const currentPath = path ? `${path}.${key}` : key;
+            checkForUndefined(value, currentPath);
+          });
+        } else if (Array.isArray(obj)) {
+          obj.forEach((item, index) => {
+            const currentPath = `${path}[${index}]`;
+            checkForUndefined(item, currentPath);
+          });
+        }
+      };
+      
+      checkForUndefined(cleanedReportData);
+      console.log('>>> FRONTEND: Undefined check completed');
 
       // Save to Firestore
       try {
         console.log(`FRONTEND: Calling saveScorecardReport at: ${new Date().toISOString()}`);
         const firestoreSaveStartTime = Date.now();
 
-        const docRef = await addDoc(collection(db, "scorecardReports"), reportData);
+        const docRef = await addDoc(collection(db, "scorecardReports"), cleanedReportData);
         const reportID = docRef.id;
-        
+
         console.log(`FRONTEND: saveScorecardReport completed at: ${new Date().toISOString()}. Duration: ${(Date.now() - firestoreSaveStartTime) / 1000}s`);
         console.log(">>> FRONTEND: Report saved to Firestore with ID: ", reportID);
 
-        // Store data in sessionStorage
-        sessionStorage.setItem('reportMarkdown', data.reportMarkdown);
-        sessionStorage.setItem('questionAnswerHistory', JSON.stringify(finalHistory.slice(0, MAX_QUESTIONS)));
-        sessionStorage.setItem('systemPromptUsed', data.systemPromptUsed);
-        sessionStorage.setItem('reportId', reportID);
-        sessionStorage.setItem('currentReportID', reportID);
-        sessionStorage.setItem('userAITier', data.userAITier || 'Unknown');
-        sessionStorage.setItem('aiTier', data.userAITier || 'Unknown');
-        sessionStorage.setItem('tier', data.userAITier || 'Unknown');
-        sessionStorage.setItem('userTier', data.userAITier || 'Unknown');
-        sessionStorage.setItem('finalScore', data.finalScore || '');
-        sessionStorage.setItem('industry', selectedIndustry || '');
+        // CRITICAL FIX: Ensure storage operations complete before navigation
+        console.log('>>> FRONTEND: Starting storage operations...');
 
-        // Create and store consolidated userData object for debug session
-        const userData = {
-          leadName: leadName || '',
-          name: leadName || '',
-          companyName: sessionStorage.getItem('scorecardLeadCompany') || '',
-          email: sessionStorage.getItem('scorecardLeadEmail') || '',
-          phone: sessionStorage.getItem('scorecardLeadPhone') || '',
-          industry: selectedIndustry || '',
-          tier: data.userAITier || 'Unknown',
-        };
-        sessionStorage.setItem('userData', JSON.stringify(userData));
-        console.log('>>> FRONTEND: Stored user data in sessionStorage:', userData);
+        try {
+          // Use Promise.all to ensure ALL storage operations complete synchronously
+          console.log('Generating report:', { finalHistory: finalHistory.length, selectedIndustry, leadName });
 
-        // Also store in localStorage as backup with identical keys
-        localStorage.setItem('reportMarkdown', data.reportMarkdown);
-        localStorage.setItem('questionAnswerHistory', JSON.stringify(finalHistory.slice(0, MAX_QUESTIONS)));
-        localStorage.setItem('systemPromptUsed', data.systemPromptUsed);
-        localStorage.setItem('reportId', reportID);
-        localStorage.setItem('currentReportID', reportID);
-        localStorage.setItem('userAITier', data.userAITier || 'Unknown');
-        localStorage.setItem('aiTier', data.userAITier || 'Unknown');
-        localStorage.setItem('tier', data.userAITier || 'Unknown');
-        localStorage.setItem('userTier', data.userAITier || 'Unknown');
-        localStorage.setItem('finalScore', data.finalScore || '');
-        localStorage.setItem('industry', selectedIndustry || '');
-        localStorage.setItem('userData', JSON.stringify(userData));
+          await Promise.all([
+            sessionStorage.setItem('reportMarkdown', data.reportMarkdown),
+            sessionStorage.setItem('questionAnswerHistory', JSON.stringify(finalHistory.slice(0, MAX_QUESTIONS))),
+            sessionStorage.setItem('systemPromptUsed', data.systemPromptUsed || ''),
+            sessionStorage.setItem('reportId', reportID),
+            sessionStorage.setItem('currentReportID', reportID),
+            sessionStorage.setItem('userAITier', data.userAITier || 'Unknown'),
+            sessionStorage.setItem('aiTier', data.userAITier || 'Unknown'),
+            sessionStorage.setItem('tier', data.userAITier || 'Unknown'),
+            sessionStorage.setItem('userTier', data.userAITier || 'Unknown'),
+            sessionStorage.setItem('finalScore', data.finalScore || ''),
+            sessionStorage.setItem('industry', selectedIndustry || '')
+          ]);
 
-        console.log('>>> FRONTEND: Successfully saved report data to storage.');
+          console.log('API response data received:', {
+            hasMarkdown: !!data.reportMarkdown,
+            tier: data.userAITier,
+            finalScore: data.finalScore
+          });
+
+          // Create and store consolidated userData object for debug session
+          const userData = {
+            leadName: capturedName || '',
+            name: capturedName || '',
+            companyName: sessionStorage.getItem('scorecardLeadCompany') || '',
+            email: sessionStorage.getItem('scorecardLeadEmail') || '',
+            phone: sessionStorage.getItem('scorecardLeadPhone') || '',
+            industry: selectedIndustry || '',
+            tier: data.userAITier || 'Unknown',
+          };
+
+          // Also store in localStorage as backup
+          await Promise.all([
+            sessionStorage.setItem('userData', JSON.stringify(userData)),
+            localStorage.setItem('reportMarkdown', data.reportMarkdown),
+            localStorage.setItem('questionAnswerHistory', JSON.stringify(finalHistory.slice(0, MAX_QUESTIONS))),
+            localStorage.setItem('systemPromptUsed', data.systemPromptUsed || ''),
+            localStorage.setItem('reportId', reportID),
+            localStorage.setItem('currentReportID', reportID),
+            localStorage.setItem('userAITier', data.userAITier || 'Unknown'),
+            localStorage.setItem('aiTier', data.userAITier || 'Unknown'),
+            localStorage.setItem('tier', data.userAITier || 'Unknown'),
+            localStorage.setItem('userTier', data.userAITier || 'Unknown'),
+            localStorage.setItem('finalScore', data.finalScore || ''),
+            localStorage.setItem('industry', selectedIndustry || ''),
+            localStorage.setItem('userData', JSON.stringify(userData))
+          ]);
+
+          console.log('>>> FRONTEND: Successfully saved all report data to storage.');
+        } catch (storageError) {
+          console.error('>>> FRONTEND: Error saving to storage:', storageError);
+          throw new Error('Failed to save report data to storage');
+        }
 
         // Clear the safety timeout since we're proceeding normally
         clearTimeout(safetyTimeout);
 
-        // Hide the loading modal FIRST before navigation
+        // Final verification before navigation
+        const storedReportId = sessionStorage.getItem('currentReportID') || sessionStorage.getItem('reportId');
+        const storedReportMarkdown = sessionStorage.getItem('reportMarkdown');
+
+        console.log(`>>> FRONTEND: Pre-navigation verification - reportId: ${storedReportId}, hasMarkdown: ${!!storedReportMarkdown}`);
+
+        if (!storedReportId || !storedReportMarkdown) {
+          throw new Error('Storage verification failed - missing critical data before navigation');
+        }
+
+        // IMMEDIATELY change state to hide lead capture form
+        console.log(`>>> FRONTEND: Setting currentStep to 'completed' to hide lead capture form`);
+        setCurrentStep('completed');
+        
+        // Hide the loading modal
+        console.log(`>>> FRONTEND: Setting finalReport=false and preparing navigation - reportId: ${reportID}`);
         setIsGeneratingFinalReport(false);
 
-        // CRITICAL FIX: Force immediate navigation to results page with reportId
-        console.log(`FRONTEND: Attempting navigation to results page at: ${new Date().toISOString()}`);
-        console.log(`>>> FRONTEND: 🔴 Forcing navigation to /scorecard/results?reportId=${reportID}`);
+        // CRITICAL FIX: Add a small delay to allow the UI to show 100% completion before navigation
+        console.log(`>>> FRONTEND: Delaying navigation by 500ms to allow UI update - reportId: ${reportID}`);
+        await new Promise(resolve => setTimeout(resolve, 500)); // Give React time to render the state change
 
-        // Add delay before navigation to ensure all state is properly saved
-        setTimeout(() => {
-          console.log(`>>> FRONTEND: Executing delayed navigation to /scorecard/results?reportId=${reportID}`);
-          // Use Next.js router if available, fallback to direct location change
-          try {
-            window.location.href = `/scorecard/results?reportId=${reportID}`;
-          } catch (navError) {
-            console.error('Navigation failed, trying alternate method:', navError);
-            window.open(`/scorecard/results?reportId=${reportID}`, '_self');
-          }
-        }, 1000); // 1 second delay to ensure storage operations complete
-      } catch (firestoreError) {
-        console.error(`FRONTEND: Error saving report to Firestore at: ${new Date().toISOString()}`, firestoreError);
-        // Even if Firestore save fails, we should attempt to navigate with session data
+        console.log(`>>> FRONTEND: Navigation executing after delay - reportId: ${reportID}`);
+
+        // Navigation happens ONLY after storage is confirmed complete and UI has shown completion
+        console.log('Navigating with reportId:', reportID);
+        window.location.href = `/scorecard/results?reportId=${reportID}`;
+
+        } catch (error) {
+          console.error(`FRONTEND: Error saving to Firestore at: ${new Date().toISOString()}`, error);
+          throw new Error('Failed to save report to Firestore');
+        }
+
+      } catch (error) {
+        console.error(`FRONTEND: Error in generateReport at: ${new Date().toISOString()}`, error);
+
+        // Check if this is a timeout error from AbortController
+        if (error instanceof Error && error.name === 'AbortError') {
+          console.error('FRONTEND: Report generation timed out via AbortController');
+          alert('We apologize, but report generation is taking too long. Please try again later.');
+        } else {
+          // Handle other types of errors with a generic message
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          alert(`We apologize, but an error occurred while generating your report. Please try again. Error: ${errorMessage}`);
+        }
+
         setIsGeneratingFinalReport(false);
         clearTimeout(safetyTimeout);
-
-        // Try to navigate to results without a reportId, relying on session data
-        console.log('>>> FRONTEND: Attempting fallback navigation without reportId at:', new Date().toISOString());
-
-        // Immediate fallback navigation
-        console.log('>>> FRONTEND: Executing immediate fallback navigation to /scorecard/results');
-        try {
-          window.location.href = `/scorecard/results`;
-        } catch (navError) {
-          console.error('Fallback navigation failed, trying alternate method:', navError);
-          window.location.replace(`/scorecard/results`);
-        }
       }
-    } catch (error) {
-      console.error(`FRONTEND: Error in generateReport at: ${new Date().toISOString()}`, error);
-      setIsGeneratingFinalReport(false);
-      clearTimeout(safetyTimeout);
-    }
     
     // At the very end of generateReport (even if error or success)
     console.log(`FRONTEND: generateReport function ended at: ${new Date().toISOString()}. Total duration: ${(Date.now() - startTime) / 1000}s`);
@@ -883,11 +988,11 @@ export default function Home() {
 
   // Modified lead capture success handler
   const handleLeadCaptureSuccess = useCallback((capturedName: string) => {
-    console.log("Frontend: Lead capture successful. Captured name:", capturedName);
-    
+    console.log("DEBUG: handleLeadCaptureSuccess called with name:", capturedName);
+
     // Set loading state for report generation first
     setIsGeneratingFinalReport(true);
-    
+
     // Update lead capture state
     setLeadCaptured(true);
     setLeadName(capturedName);
@@ -895,24 +1000,29 @@ export default function Home() {
     // Store the name in sessionStorage for use in results page
     if (typeof window !== 'undefined') {
       sessionStorage.setItem('scorecardUserName', capturedName);
+      sessionStorage.setItem('scorecardLeadName', capturedName);
     }
 
-    console.log("Frontend: Lead capture successful. Generating report immediately.");
-    
+    console.log("DEBUG: Lead capture state updated. About to call generateReport");
+    console.log("DEBUG: currentHistory length:", scorecardState.history.length);
+    console.log("DEBUG: selectedIndustry:", selectedIndustry);
+
     // Use the current history to generate the report
-    const currentHistory = scorecardState.history;
-    
+    const currentHistory = [...scorecardState.history];
+
     // Generate the report with exactly MAX_QUESTIONS answers or current answers if fewer
-    generateReport(currentHistory.slice(0, MAX_QUESTIONS));
-    
-    // Set the current step to results to ensure proper navigation
-    setCurrentStep('results');
-  }, [setLeadCaptured, setLeadName, scorecardState.history, MAX_QUESTIONS, setIsGeneratingFinalReport, generateReport, setCurrentStep]);
+    const historyToUse = currentHistory.slice(0, MAX_QUESTIONS);
+    console.log("DEBUG: historyToUse length:", historyToUse.length);
+
+    generateReport(historyToUse, capturedName);
+
+    // Don't set currentStep to 'results' here - let generateReport handle navigation to the dedicated results page
+  }, [setLeadCaptured, setLeadName, scorecardState.history, MAX_QUESTIONS, setIsGeneratingFinalReport, generateReport, setCurrentStep, selectedIndustry]);
 
   const handlePostAssessmentLeadCaptureSuccess = useCallback(() => {
     console.log("Post-assessment lead capture successful. Moving to results.");
-    setCurrentStep('results');
-  }, [setCurrentStep]);
+    // Don't set currentStep - let natural navigation to results page happen
+  }, []);
   
   // Extract tier from report markdown if available
   const extractedTier = useMemo(() => {
@@ -934,14 +1044,17 @@ export default function Home() {
     return null;
   }, [scorecardState.reportMarkdown]);
 
-  // NEW: Add a failsafe effect to ensure currentStep is set to results when a report is completed
+  // NEW: Add a failsafe effect to navigate to results when a report is completed
   useEffect(() => {
-    // Synchronize current step with overall status - this is a critical backup to ensure UI flow proceeds
+    // If report is completed and we have the data, navigate to results page
     if (scorecardState.overall_status === 'completed' && scorecardState.reportMarkdown && currentStep === 'assessment') {
-      console.log('>>> FRONTEND: BACKUP STATE SYNC - Forcing currentStep to "results" because report is completed');
-      setCurrentStep('results');
+      console.log('>>> FRONTEND: BACKUP NAVIGATION - Report completed, navigating to results page');
+      const reportId = sessionStorage.getItem('currentReportID') || sessionStorage.getItem('reportId');
+      if (reportId) {
+        window.location.href = `/scorecard/results?reportId=${reportId}`;
+      }
     }
-  }, [scorecardState.overall_status, scorecardState.reportMarkdown, currentStep, setCurrentStep]);
+  }, [scorecardState.overall_status, scorecardState.reportMarkdown, currentStep]);
 
   // --- Stabilize handleAnswerSubmit using Functional Updates ---
   const handleAnswerSubmit = useCallback(async (answer: any, answerSource?: AnswerSourceType) => {
@@ -990,45 +1103,41 @@ export default function Home() {
       // Show lead form exactly after 20 questions are answered
       if (!leadCaptured && newHistoryLength === LEAD_FORM_THRESHOLD) {
         console.log(`>>> FRONTEND: Reached lead form threshold (${LEAD_FORM_THRESHOLD}). Showing lead capture form.`);
-        
+
         // Stop auto-complete if it's running
         if (isAutoCompleting) {
           console.log('[Parent] Pausing for lead capture, disabling auto-complete.');
           setIsAutoCompleting(false);
         }
-        
+
         setScorecardState(prev => ({
           ...prev,
           isLoading: false,
           overall_status: 'lead-capture-required', // Add status to indicate lead capture is required
           currentQuestionNumber: MAX_QUESTIONS // Set to max questions to prevent showing more
         }));
-        
-        // Show lead capture form
+
+        // Show lead capture form - this should happen BEFORE navigation to results
         setCurrentStep('leadCapture');
         return;
       }
 
+      // IMPORTANT: Only show lead capture form at MAX_QUESTIONS, don't generate report here
+      // The report will be generated after the lead form is submitted
       if (newHistoryLength >= MAX_QUESTIONS) {
-        console.log(`>>> FRONTEND: Reached maximum questions (${MAX_QUESTIONS}). Completing assessment.`);
+        console.log(`>>> FRONTEND: Reached maximum questions (${MAX_QUESTIONS}). Showing lead capture form.`);
 
-        // CRITICAL FIX: Immediately set currentStep to 'results' to prevent showing question screens
-        setCurrentStep('results');
+        // Show lead capture form for final step
+        setCurrentStep('leadCapture');
 
         setScorecardState(prev => ({
           ...prev,
           isLoading: false,
-          overall_status: 'completed',
+          overall_status: 'lead-capture-required', // Ensure status indicates lead capture is required
           currentQuestionNumber: MAX_QUESTIONS
         }));
 
-        // CRITICAL FIX: EXPLICIT additional check to ensure we change step when hitting MAX_QUESTIONS
-        console.log(`>>> FRONTEND: MAX_QUESTIONS REACHED: Direct transition enforcement in handleAnswerSubmit`);
-
-        // Generate the report with exactly MAX_QUESTIONS answers
-        generateReport(updatedHistory.slice(0, MAX_QUESTIONS));
-
-        // The generateReport function now handles navigation directly with window.location.href
+        console.log(`>>> FRONTEND: MAX_QUESTIONS REACHED: Lead capture will trigger final report generation`);
         return;
       }
 
@@ -1277,9 +1386,30 @@ export default function Home() {
       );
     }
 
-    // Results (fallback if not already redirected)
+    // Show "Redirecting..." message when completed
+    if (currentStep === 'completed') {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sg-bright-green"></div>
+          <p className="text-lg font-medium text-gray-700">Redirecting to your results...</p>
+        </div>
+      );
+    }
+
+    // Results should be handled by the dedicated results page at /scorecard/results
+    // If we reach this point in the results step, allow navigation to proceed
     if (currentStep === 'results' || scorecardState.overall_status === 'completed') {
-      return <ReportLoadingIndicator isLoading={true} />;
+      // Navigation to /scorecard/results should have already occurred
+      // If we're still here, it means navigation might have failed, so redirect
+      const reportId = sessionStorage.getItem('currentReportID') || sessionStorage.getItem('reportId');
+      if (reportId) {
+        console.log('>>> FRONTEND: Redirecting to results page with reportId:', reportId);
+        window.location.href = `/scorecard/results?reportId=${reportId}`;
+        return <ReportLoadingIndicator isLoading={true} />;
+      } else {
+        console.error('>>> FRONTEND: No reportId found, cannot navigate to results');
+        return <div>Report ID not found. Please try again.</div>;
+      }
     }
 
     // Default: Show industry selection

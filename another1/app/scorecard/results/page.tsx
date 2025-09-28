@@ -44,56 +44,57 @@ export default function ResultsPage() {
   useEffect(() => {
     // Debug any issues with accessing the results
     console.log('RESULTS PAGE WRAPPER: Component mounted');
-    
+
     if (typeof window !== 'undefined') {
       // Check for lead information first
       const leadEmail = sessionStorage.getItem('scorecardLeadEmail') || localStorage.getItem('scorecardLeadEmail');
-      const leadName = sessionStorage.getItem('scorecardLeadName') || 
-                       sessionStorage.getItem('scorecardUserName') || 
-                       localStorage.getItem('scorecardLeadName') || 
+      const leadName = sessionStorage.getItem('scorecardLeadName') ||
+                       sessionStorage.getItem('scorecardUserName') ||
+                       localStorage.getItem('scorecardLeadName') ||
                        localStorage.getItem('scorecardUserName');
-      
+
       // Log storage state to debug
       const sessionReportId = sessionStorage.getItem('currentReportID') || sessionStorage.getItem('reportId');
       const localReportId = localStorage.getItem('currentReportID') || localStorage.getItem('reportId');
-      
+
       console.log('RESULTS PAGE WRAPPER: Session report ID:', sessionReportId);
       console.log('RESULTS PAGE WRAPPER: Local report ID:', localReportId);
       console.log('RESULTS PAGE WRAPPER: Lead name found:', leadName);
-      
+
       // Store userName in state for passing to child components
       if (leadName && leadName !== 'User') {
         setUserName(leadName);
       }
-      
+
       // Log session/local markdown
       const sessionMarkdown = sessionStorage.getItem('reportMarkdown');
       const localMarkdown = localStorage.getItem('reportMarkdown');
-      
+
       console.log('RESULTS PAGE WRAPPER: Session markdown exists:', !!sessionMarkdown);
       console.log('RESULTS PAGE WRAPPER: Local markdown exists:', !!localMarkdown);
-      
+
       if (sessionMarkdown) {
-        console.log('RESULTS PAGE WRAPPER: Session markdown preview:', 
+        console.log('RESULTS PAGE WRAPPER: Session markdown preview:',
           sessionMarkdown.substring(0, 100) + '...');
       }
-      
+
       // Check for user tier
-      const tier = sessionStorage.getItem('tier') || 
-                  sessionStorage.getItem('userAITier') || 
+      const tier = sessionStorage.getItem('tier') ||
+                  sessionStorage.getItem('userAITier') ||
                   sessionStorage.getItem('aiTier') ||
-                  localStorage.getItem('tier') || 
-                  localStorage.getItem('userAITier') || 
+                  localStorage.getItem('tier') ||
+                  localStorage.getItem('userAITier') ||
                   localStorage.getItem('aiTier');
-                  
+
       console.log('RESULTS PAGE WRAPPER: Stored tier value:', tier);
 
-      // If we have report data but no lead info, show the lead form
-      if (sessionMarkdown && (!leadEmail || !leadName)) {
-        console.log('RESULTS PAGE WRAPPER: Report exists but no lead info found, showing lead form');
-        setShowLeadForm(true);
-        
-        // Collect report data for the lead form
+      // CRITICAL FIX: Always proceed to results if we have report data, regardless of lead info
+      // This prevents any redirect loops and ensures users see their results
+      if (sessionMarkdown) {
+        console.log('RESULTS PAGE WRAPPER: Report data found, proceeding to results');
+        setLeadCaptured(true);
+
+        // Collect report data for the lead form (in case it's needed later)
         setReportData({
           reportMarkdown: sessionMarkdown,
           questionAnswerHistory: JSON.parse(sessionStorage.getItem('questionAnswerHistory') || localStorage.getItem('questionAnswerHistory') || '[]'),
@@ -101,7 +102,18 @@ export default function ResultsPage() {
           industry: sessionStorage.getItem('industry') || localStorage.getItem('industry') || ''
         });
       } else {
-        setLeadCaptured(true);
+        // Only show lead form if we have NO report data at all
+        console.log('RESULTS PAGE WRAPPER: No report data found, checking for existing lead info');
+
+        // If we have lead info but no report data, this might be a direct navigation
+        // In this case, we should still try to proceed rather than redirect
+        if (leadEmail && leadName) {
+          console.log('RESULTS PAGE WRAPPER: Lead info exists but no report data, this might be a direct navigation');
+          setLeadCaptured(true); // Assume lead is captured and proceed
+        } else {
+          console.log('RESULTS PAGE WRAPPER: No report data and no lead info, showing lead form');
+          setShowLeadForm(true);
+        }
       }
     }
   }, []);
