@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { generateScorecardHTMLv5 as generateScorecardHTML } from '@/lib/html-generation/scorecard-html-v5';
+import { generateScorecardHTML } from '../generate-scorecard-weasyprint-report/html-generator';
 
 /**
  * Generate PDF using WeasyPrint service (self-hosted)
@@ -10,11 +10,11 @@ import { generateScorecardHTMLv5 as generateScorecardHTML } from '@/lib/html-gen
 async function generatePresentationPDF(html: string): Promise<Buffer> {
   try {
     // WeasyPrint service URL
-    const weasyPrintServiceUrl = process.env.WEASYPRINT_SERVICE_URL || 'http://168.231.115.219:5001/generate-pdf';
+    const weasyPrintServiceUrl = process.env.WEASYPRINT_SERVICE_URL || 'https://socialgarden-theweasyprint.ul2dku.easypanel.host/pdf';
     console.log(`Using WeasyPrint service at: ${weasyPrintServiceUrl}`);
     
     // Modify HTML to add presentation-specific CSS
-    const presentationHtml = addPresentationStyling(html);
+    const presentationHtml = html; // Skip addPresentationStyling since template already has styling
     console.log(`Presentation HTML size: ${presentationHtml.length} bytes`);
     
     // Make request to WeasyPrint service
@@ -211,7 +211,7 @@ export async function POST(request: Request) {
     
     // Return the PDF
     console.log('Returning PDF response');
-    return new NextResponse(pdfBuffer, {
+    return new NextResponse(pdfBuffer as any, {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',

@@ -4,7 +4,7 @@
 	"description": "Collection of MCP servers",
 	"main": "klavis-mcp-server.js",
 	"scripts": {
-		"start": "node klavis-mcp-server.js",
+		"start": "echo 'No root server. Use scripts in another1/'",
 		"start:strata": "node klavis-strata-server.js",
 		"dev": "nodemon klavis-mcp-server.js",
 		"dev:strata": "nodemon klavis-strata-server.js"

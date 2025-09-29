@@ -73,4 +73,29 @@ if (fs.existsSync(staticSrc)) {
   console.log('⚠️ Static folder not found');
 }
 
+// Copy API route templates
+const apiTemplates = [
+  'app/api/generate-scorecard-weasyprint-report/template.html',
+  'app/api/generate-presentation-weasyprint-report/template-full-width.html'
+];
+
+for (const templatePath of apiTemplates) {
+  const srcPath = path.join(process.cwd(), templatePath);
+  const destPath = path.join(process.cwd(), '.next/standalone', templatePath);
+  
+  if (fs.existsSync(srcPath)) {
+    // Create the destination directory if it doesn't exist
+    const destDir = path.dirname(destPath);
+    if (!fs.existsSync(destDir)) {
+      fs.mkdirSync(destDir, { recursive: true });
+    }
+    
+    // Copy the template file
+    fs.copyFileSync(srcPath, destPath);
+    console.log(`✅ Template copied: ${templatePath}`);
+  } else {
+    console.log(`⚠️ Template not found: ${templatePath}`);
+  }
+}
+
 console.log('✅ All assets copied to standalone build'); 

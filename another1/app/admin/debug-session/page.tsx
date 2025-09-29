@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -37,8 +38,21 @@ export default function DebugSessionPage() {
     setQuestionAnswerHistory(JSON.parse(e.target.value));
   };
 
+
+  // Copy all debug data to clipboard
+  const copyAllToClipboard = () => {
+    const allData = {
+      userData,
+      scoreData,
+      questionAnswerHistory,
+      reportMarkdown,
+      parsedSections,
+    };
+    navigator.clipboard.writeText(JSON.stringify(allData, null, 2));
+  };
+
   // Handle manual input changes for report markdown
-  const handleReportChange = (e: React.Changeable<HTMLTextAreaElement>) => {
+  const handleReportChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setReportMarkdown(e.target.value);
   };
 
@@ -82,7 +96,7 @@ export default function DebugSessionPage() {
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Phase</th>
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500">Question</th>
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500">Answer</th>
-                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500">AI Thinking</th>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500">AI Thinking</th>
               </tr>
             </thead>
             <tbody>

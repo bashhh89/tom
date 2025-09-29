@@ -9,7 +9,7 @@ interface ReportLoadingIndicatorProps {
 
 const loadingMessages = [
   "Analyzing your AI readiness...",
-  "Evaluating your organization's AI maturity...",
+  "Evaluating your organization's AI efficiency...",
   "Crafting personalized insights...",
   "Identifying key opportunities for growth...",
   "Preparing your strategic action plan...",

@@ -75,7 +75,8 @@ if (fs.existsSync(publicSrc) && !fs.existsSync(publicDest)) {
 
 // Start the server
 console.log('Starting production server...');
-const serverProcess = spawn('node', ['.next/standalone/server.js'], {
+const serverPath = path.join(__dirname, '.next/standalone/server.js');
+const serverProcess = spawn('node', [serverPath], {
   stdio: 'inherit',
   env: process.env
 });

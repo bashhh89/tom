@@ -62,7 +62,7 @@ const LearningHubDirectionSection: React.FC<LearningHubDirectionSectionProps> = 
         <h3 className="text-2xl font-bold text-[#004851] mb-4">Continue Your AI Journey</h3>
         <p className="text-gray-600">
           Explore our Learning Hub for personalized resources, tools, and guides to help you advance 
-          your AI maturity based on your assessment results.
+          your AI efficiency based on your assessment results.
         </p>
       </div>
       

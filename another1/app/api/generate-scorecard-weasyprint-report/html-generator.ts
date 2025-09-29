@@ -31,118 +31,75 @@ export interface ScorecardData {
 }
 
 /**
- * Process markdown to extract strategic action plan items
+ * Extracts a specific section from markdown text
+ * @param text - Full markdown text
+ * @param sectionTitle - Title of the section to extract
+ * @param stopAtSections - Section titles where extraction should stop
+ * @returns Content of the specified section
  */
-function extractStrategicPlan(markdownContent: string): string[] {
-  if (!markdownContent) {
-    console.log('No markdown content provided to extractStrategicPlan');
-    return [];
-  }
+function extractSection(text: string, sectionTitle: string, stopAtSections: string[] = []): string {
+  const lines = text.split('\n');
+  let inSection = false;
+  let sectionContent: string[] = [];
   
-  console.log('Extracting strategic plan from markdown content...');
-  
-  // Find the strategic plan section
-  const strategicPlanRegex = /## Strategic Action Plan\s*([\s\S]*?)(?=##|$)/i;
-  const match = markdownContent.match(strategicPlanRegex);
-  
-  if (!match || !match[1]) {
-    console.log('No Strategic Action Plan section found');
-    
-    // Try alternative headings
-    const recommendationsRegex = /## Recommendations\s*([\s\S]*?)(?=##|$)/i;
-    const recMatch = markdownContent.match(recommendationsRegex);
-    
-    if (recMatch && recMatch[1]) {
-      console.log('Found Recommendations section instead');
-      const recContent = recMatch[1].trim();
-      console.log('Recommendations content length:', recContent.length);
-      
-      // Process recommendations as action items
-      const items: string[] = [];
-      const lines = recContent.split('\n');
-      
-      let currentItem = '';
-      let collectingItem = false;
-      
-      for (const line of lines) {
-        // Check if this line starts a new numbered or bullet item
-        if (/^\d+\./.test(line.trim()) || /^[•\-]/.test(line.trim())) {
-          // If we were collecting a previous item, save it
-          if (collectingItem && currentItem.trim()) {
-            items.push(currentItem.trim());
-          }
-          
-          // Start collecting a new item
-          currentItem = line.trim();
-          collectingItem = true;
-        } 
-        // If we're collecting an item and this is a continuation line
-        else if (collectingItem && line.trim()) {
-          currentItem += ' ' + line.trim();
-        }
-      }
-      
-      // Don't forget to add the last item
-      if (collectingItem && currentItem.trim()) {
-        items.push(currentItem.trim());
-      }
-      
-      console.log(`Found ${items.length} recommendation items`);
-      
-      // Format the items for better display
-      return items.map(item => {
-        // Handle bullet points
-        if (item.startsWith('•') || item.startsWith('-')) {
-          const content = item.replace(/^[•\-]\s*/, '').trim();
-          
-          // Try to extract the title if it's in bold format
-          const boldTitleMatch = content.match(/\*\*([^:]+):\*\*\s*(.*)/);
-          if (boldTitleMatch) {
-            return `<strong>${boldTitleMatch[1]}</strong>: ${boldTitleMatch[2]}`;
-          }
-          
-          // Try to extract the title if it's in regular format
-          const regularTitleMatch = content.match(/([^:]+):\s*(.*)/);
-          if (regularTitleMatch) {
-            return `<strong>${regularTitleMatch[1]}</strong>: ${regularTitleMatch[2]}`;
-          }
-          
-          return content;
-        }
-        
-        // Handle numbered items
-        if (/^\d+\./.test(item)) {
-          const content = item.replace(/^\d+\.\s*/, '').trim();
-          
-          // Try to extract the title if it's in bold format
-          const boldTitleMatch = content.match(/\*\*([^:]+):\*\*\s*(.*)/);
-          if (boldTitleMatch) {
-            return `<strong>${boldTitleMatch[1]}</strong>: ${boldTitleMatch[2]}`;
-          }
-          
-          // Try to extract the title if it's in regular format
-          const regularTitleMatch = content.match(/([^:]+):\s*(.*)/);
-          if (regularTitleMatch) {
-            return `<strong>${regularTitleMatch[1]}</strong>: ${regularTitleMatch[2]}`;
-          }
-          
-          return content;
-        }
-        
-        return item;
-      });
+  for (const line of lines) {
+    // Check if we're starting the target section
+    if (line.toLowerCase().includes(sectionTitle.toLowerCase()) && 
+        (line.startsWith('#') || line.startsWith('**') || line.match(/^\d+\./))) {
+      inSection = true;
+      continue;
     }
     
+    // Check if we hit a stop section
+    if (inSection && stopAtSections.some(stop => 
+      line.toLowerCase().includes(stop.toLowerCase()) && 
+      (line.startsWith('#') || line.startsWith('**') || line.match(/^\d+\./))
+    )) {
+      break;
+    }
+    
+    // Collect content if we're in the section
+    if (inSection) {
+      sectionContent.push(line);
+    }
+  }
+  
+  return sectionContent.join('\n').trim();
+}
+
+/**
+ * Extracts strategic plan/recommendations from the report markdown
+ * @param text - Full report markdown
+ * @returns Array of strategic plan items
+ */
+function extractStrategicPlan(text: string): string[] {
+  console.log('Extracting strategic plan from text length:', text.length);
+  
+  // Try different patterns to identify strategic plan sections
+  const strategicSections = [
+    'Strategic Recommendations',
+    'Action Plan',
+    'Next Steps',
+    'Recommendations',
+    'Implementation Plan'
+  ];
+  
+  // Try to find content from any of the strategic sections
+  let strategicContent = '';
+  for (const section of strategicSections) {
+    strategicContent = extractSection(text, section, ['Conclusion', 'Summary', 'Contact']);
+    if (strategicContent.length > 0) break;
+  }
+  if (!strategicContent) {
+    console.log('No strategic section found, returning empty array');
     return [];
   }
   
-  const planContent = match[1].trim();
-  console.log('Found Strategic Action Plan section with content length:', planContent.length);
+  console.log('Found strategic content:', strategicContent.substring(0, 200) + '...');
   
-  // Split the content by numbered items (1., 2., etc.) or bullet points
+  // Parse the content into individual items
+  const lines = strategicContent.split('\n');
   const items: string[] = [];
-  const lines = planContent.split('\n');
-  
   let currentItem = '';
   let collectingItem = false;
   
@@ -204,8 +161,8 @@ function extractStrategicPlan(markdownContent: string): string[] {
       return `<strong>${regularTitleMatch[1]}</strong>: ${regularTitleMatch[2]}`;
     }
     
-    // Otherwise just return the item as is
-    return item;
+    // Otherwise, just remove the number prefix if present
+    return item.replace(/^\d+\.\s*/, '');
   });
 }
 
@@ -797,1030 +754,92 @@ export async function generateScorecardHTML(data: ScorecardData): Promise<string
   // Debug the report data structure
   debugReportData(data);
 
-  // Define brand colors
-  const colors = {
-    brightGreen: '#20E28F',
-    darkGreen: '#28a745',
-    darkTeal: '#103138',
-    white: '#FFFFFF',
-    lightMint: '#F3FDF5',
-    lightGrey: '#f8f9fa',
-    borderGrey: '#dee2e6',
-    textDark: '#343a40',
-    textMuted: '#6c757d',
-    textBody: '#495057',
-    cardBorder: '#e9ecef',
-    scoreBg: '#f1f3f5'
-  };
-
-  // Extract strengths and weaknesses (used for Focus Areas) from markdown
-  const strengths = extractStrengths(FullReportMarkdown);
-  const weaknesses = extractWeaknesses(FullReportMarkdown); // Using weaknesses for Focus Areas as per user feedback example
-
-  // Determine tier description
-  const tierDescription = getTierDescription(ScoreInformation.AITier);
-  
-  // Process the full markdown content for the details section
-  // We'll keep the Strategic Action Plan section in the markdown for now
-  const fullReportHtml = renderFullReportMarkdown(FullReportMarkdown);
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Efficiency Scorecard - ${UserInformation.UserName}</title>
-  <style>
-    @font-face {
-      font-family: 'Inter';
-      src: url('/public/fonts/Inter-Regular.ttf') format('truetype');
-      font-weight: normal;
-      font-style: normal;
-    }
-
-    @font-face {
-      font-family: 'Inter';
-      src: url('/public/fonts/Inter-Bold.ttf') format('truetype');
-      font-weight: bold;
-      font-style: normal;
-    }
-
-    @page {
-      size: A4 portrait;
-      margin: 2cm 1.5cm;
-      @bottom-center {
-        content: "Page " counter(page) " of " counter(pages);
-        font-family: 'Inter', sans-serif;
-        font-size: 9pt;
-        color: ${colors.textMuted};
-        padding-top: 0.5cm;
-        border-top: 1pt solid ${colors.lightMint};
-      }
-    }
-
-    #document-footer-content {
-      position: running(documentFooter);
-      text-align: center;
-      font-size: 8pt;
-      color: ${colors.textMuted};
-      font-family: 'Inter', sans-serif;
-    }
-
-    @page {
-      @bottom-left {
-        content: element(documentFooter);
-        padding-top: 0.5cm;
-      }
-    }
-
-    body {
-      font-family: 'Inter', sans-serif;
-      line-height: 1.6;
-      font-size: 10pt;
-      color: ${colors.textBody};
-      background-color: #f8f8f8;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-      margin: 0;
-      padding: 0;
-    }
-
-    .container {
-      max-width: 21cm;
-      margin: 0 auto;
-      background-color: ${colors.white};
-      padding: 2cm;
-      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-    }
-
-    /* Global Typography - Enhanced for better hierarchy */
-    h1, h2, h3, h4, h5, h6 {
-      font-family: 'Inter', sans-serif;
-      color: ${colors.textDark};
-      font-weight: bold;
-      line-height: 1.3;
-      margin-top: 1.5em;
-      margin-bottom: 0.8em;
-      page-break-after: avoid;
-    }
-
-    h1 {
-      font-size: 28px;
-      margin-top: 0;
-      margin-bottom: 8px;
-      line-height: 1.2;
-      color: ${colors.textDark};
-      border-bottom: none;
-      padding-bottom: 0;
-    }
-
-    h2 {
-      font-size: 22px;
-      font-weight: 600;
-      color: ${colors.textDark};
-      margin-top: 30px;
-      margin-bottom: 15px;
-      padding-bottom: 5px;
-      border-bottom: 2px solid ${colors.darkGreen};
-    }
-
-    h3 {
-      font-size: 16pt;
-      margin-top: 1.5em;
-      margin-bottom: 0.8em;
-      color: ${colors.textDark};
-    }
-
-    h4 {
-      font-size: 14pt;
-      color: ${colors.textDark};
-      margin-top: 15px;
-      margin-bottom: 8px;
-    }
-
-    h5 {
-      font-size: 12pt;
-      color: ${colors.textDark};
-      margin-top: 15px;
-      margin-bottom: 8px;
-    }
-
-    h6 {
-      font-size: 11pt;
-      color: ${colors.textDark};
-      margin-top: 0.8em;
-      margin-bottom: 0.5em;
-    }
-
-    p {
-      margin-bottom: 1em;
-      line-height: 1.6;
-      font-family: 'Inter', sans-serif;
-    }
-
-    strong {
-      font-weight: bold;
-    }
-
-    em {
-      font-style: italic;
-    }
-
-    /* Standardized Card Style */
-    .card {
-      background-color: ${colors.white};
-      border: 1px solid ${colors.cardBorder};
-      border-radius: 8px;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03);
-      padding: 20px;
-      margin-bottom: 20px;
-      page-break-inside: avoid;
-    }
-
-    .card-accent {
-      border-left: 5px solid ${colors.darkGreen};
-    }
-
-    .card h3, .card h4 {
-      margin-top: 0;
-      border-bottom: 1px solid ${colors.lightMint};
-      padding-bottom: 10px;
-      margin-bottom: 15px;
-    }
-
-    /* List Styles with Item Block Design */
-    ul, ol {
-      margin-bottom: 1em;
-      padding-left: 0;
-      list-style-type: none;
-    }
-
-    li {
-      margin-bottom: 10px;
-      line-height: 1.6;
-      font-family: 'Inter', sans-serif;
-      color: ${colors.textBody};
-      list-style-type: none;
-    }
-
-    /* Universal Item Block Styling */
-    .list-item-block {
-      background-color: #f8f9fa;
-      border: 1px solid #e9ecef;
-      border-left: 4px solid ${colors.darkGreen};
-      padding: 12px 15px;
-      margin-bottom: 10px;
-      border-radius: 4px;
-      page-break-inside: avoid !important;
-      line-height: 1.6;
-      position: relative;
-      display: block;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-    }
-
-    /* Finding Item Card - Same as list-item-block for consistency */
-    .finding-item-card {
-      background-color: #f8f9fa;
-      border: 1px solid #e9ecef;
-      border-left: 4px solid ${colors.darkGreen};
-      padding: 12px 15px;
-      margin-bottom: 10px;
-      border-radius: 4px;
-      page-break-inside: avoid !important;
-      line-height: 1.6;
-      font-family: 'Inter', sans-serif;
-      position: relative;
-      display: block;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-    }
-
-    /* Green bullet styling for lists */
-    ul li::before {
-      content: '•';
-      color: ${colors.darkGreen};
-      font-weight: bold;
-      position: absolute;
-      left: 4px;
-    }
-
-    /* Assessment Results Section - Findings */
-    .assessment-results-section .findings-container {
-      display: flex;
-      justify-content: space-between;
-      gap: 20px;
-      margin-top: 20px;
-      page-break-inside: avoid;
-    }
-
-    .assessment-results-section .strengths-section,
-    .assessment-results-section .focus-areas-section {
-      flex: 1;
-      padding: 15px;
-      border-radius: 6px;
-      background-color: ${colors.white};
-      border: 1px solid ${colors.cardBorder};
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03);
-      page-break-inside: avoid;
-    }
-
-    .assessment-results-section .strengths-section h4,
-    .assessment-results-section .focus-areas-section h4 {
-      color: ${colors.textDark};
-      font-size: 14px;
-      margin-top: 0;
-      margin-bottom: 15px;
-      font-weight: bold;
-      text-align: center;
-      padding-bottom: 8px;
-      border-bottom: 1px solid ${colors.lightMint};
-    }
-
-    .assessment-results-section ul {
-      padding-left: 0;
-      margin: 0;
-    }
-
-    .assessment-results-section li {
-      margin-bottom: 8px;
-      line-height: 1.6;
-      font-family: 'Inter', sans-serif;
-      color: ${colors.textBody};
-      position: relative;
-      list-style-type: none;
-    }
-
-    /* Next Steps Summary - Green callout banner */
-    .assessment-results-section .next-steps-summary {
-      margin-top: 20px;
-      padding: 12px 15px;
-      background-color: ${colors.lightMint};
-      border-radius: 6px;
-      border-left: 4px solid ${colors.darkGreen};
-      font-style: italic;
-      color: ${colors.textDark};
-      font-size: 10pt;
-      page-break-inside: avoid;
-    }
-    
-    .assessment-results-section .next-steps-summary p {
-      margin: 0;
-    }
-
-    /* Header */
-    .main-header {
-      background-color: ${colors.lightGrey};
-      border: 1px solid ${colors.borderGrey};
-      border-left: 5px solid ${colors.darkGreen};
-      padding: 20px 25px;
-      margin-bottom: 30px;
-      border-radius: 6px;
-      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
-      text-align: center;
-      page-break-inside: avoid;
-    }
-
-    .main-header h1 {
-      font-size: 28px;
-      font-weight: bold;
-      margin: 0 0 8px 0;
-      color: ${colors.textDark};
-    }
-
-    .main-header p {
-      font-size: 14px;
-      color: ${colors.textMuted};
-      margin: 0;
-      line-height: 1.4;
-    }
-
-    /* Client Info Section */
-    .info-section {
-      display: flex;
-      justify-content: space-between;
-      gap: 20px;
-      margin-bottom: 30px;
-      page-break-inside: avoid;
-    }
-
-    .info-card {
-      flex: 1;
-      background-color: ${colors.white};
-      border: 1px solid ${colors.cardBorder};
-      border-radius: 6px;
-      padding: 20px;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03);
-      page-break-inside: avoid;
-    }
-
-    .info-card h3 {
-      font-size: 16px;
-      font-weight: bold;
-      margin-top: 0;
-      margin-bottom: 15px;
-      padding-bottom: 10px;
-      border-bottom: 1px solid ${colors.lightMint};
-      color: ${colors.textDark};
-    }
-
-    .info-card p {
-      margin-bottom: 10px;
-      line-height: 1.5;
-      font-size: 11pt;
-    }
-
-    .info-card p:last-child {
-      margin-bottom: 0;
-    }
-
-    .info-card p strong {
-      display: inline-block;
-      min-width: 80px;
-      color: ${colors.textDark};
-    }
-
-    /* Overall Tier Card Container */
-    .tier-card-container {
-      background-color: ${colors.white};
-      border: 1px solid ${colors.cardBorder};
-      border-radius: 6px;
-      padding: 25px;
-      margin-bottom: 30px;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03);
-      text-align: center;
-      page-break-inside: avoid;
-    }
-
-    .tier-card-container h3 {
-      font-size: 16px;
-      font-weight: bold;
-      margin-top: 0;
-      margin-bottom: 20px;
-      color: ${colors.textDark};
-      border-bottom: none;
-    }
-
-    .overall-tier-section {
-      margin-bottom: 0;
-    }
-
-    .overall-tier-section .tier-value {
-      font-size: 24pt;
-      font-weight: bold;
-      color: ${colors.darkGreen};
-      background-color: #e6f7ee;
-      padding: 8px 15px;
-      border-radius: 4px;
-      display: inline-block;
-      min-width: 150px;
-      margin: 0 auto 10px;
-    }
-
-    .overall-tier-section .tier-label {
-      font-size: 11pt;
-      color: ${colors.textMuted};
-      margin-top: 10px;
-      font-weight: normal;
-    }
-
-    /* Assessment Results Section */
-    .assessment-results-section {
-      background-color: ${colors.white};
-      border: 1px solid ${colors.cardBorder};
-      border-radius: 6px;
-      padding: 25px;
-      margin-bottom: 30px;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03);
-      page-break-inside: avoid;
-    }
-
-    .assessment-results-section h3 {
-      font-size: 16px;
-      font-weight: bold;
-      margin-top: 0;
-      margin-bottom: 15px;
-      padding-bottom: 10px;
-      border-bottom: 1px solid ${colors.lightMint};
-      color: ${colors.textDark};
-    }
-
-    .assessment-results-section .intro-text {
-      margin-bottom: 20px;
-      line-height: 1.6;
-      font-size: 11pt;
-      color: ${colors.textBody};
-      padding: 0;
-      background-color: transparent;
-      border: none;
-      box-shadow: none;
-    }
-
-    /* Strategic Action Plan Section */
-    .action-plan-section {
-      margin-bottom: 2em;
-      padding: 25px;
-      background-color: ${colors.white};
-      border: 1px solid #e9ecef;
-      border-radius: 6px;
-      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
-      page-break-inside: avoid;
-    }
-
-    .action-plan-section h2 {
-      margin-top: 0;
-      color: ${colors.textDark};
-      font-size: 22px;
-      font-weight: 600;
-      margin-bottom: 15px;
-      padding-bottom: 5px;
-      border-bottom: 2px solid ${colors.darkGreen};
-    }
-
-    .section-intro {
-      margin-bottom: 15px;
-      line-height: 1.6;
-      color: ${colors.textDark};
-      font-size: 10pt;
-    }
-
-    .action-plan-list {
-      list-style-type: none;
-      padding: 0;
-      margin: 0;
-    }
-
-    .action-item {
-      margin-bottom: 12px;
-      padding: 12px;
-      background-color: #f8f9fa;
-      border: 1px solid #dee2e6;
-      border-radius: 4px;
-      border-left: 4px solid ${colors.darkGreen};
-      display: flex;
-      align-items: flex-start;
-      page-break-inside: avoid !important;
-    }
-
-    .action-number {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 24px;
-      height: 24px;
-      background-color: ${colors.darkGreen};
-      color: ${colors.white};
-      border-radius: 50%;
-      font-weight: bold;
-      font-size: 10pt;
-      margin-right: 10px;
-      flex-shrink: 0;
-    }
-
-    .action-text {
-      flex: 1;
-      line-height: 1.5;
-      font-size: 10pt;
-    }
-
-    /* Assessment Q&A Section Styling */
-    .qa-section {
-      margin-bottom: 2em;
-      padding: 25px;
-      background-color: ${colors.white};
-      border: 1px solid ${colors.cardBorder};
-      border-radius: 6px;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03);
-      page-break-inside: avoid;
-      font-family: 'Inter', sans-serif;
-    }
-
-    .qa-section h2 {
-      margin-top: 0;
-      color: ${colors.textDark};
-      font-size: 22px;
-      font-weight: 600;
-      margin-bottom: 15px;
-      padding-bottom: 5px;
-      border-bottom: 2px solid ${colors.darkGreen};
-    }
-
-    .qa-phase h3 {
-      color: ${colors.textDark};
-      font-size: 14pt;
-      margin-top: 1.5em;
-      margin-bottom: 0.8em;
-      border-bottom: 1px solid ${colors.lightMint};
-      padding-bottom: 5px;
-    }
-    
-    /* Multi-column layout for Q&A items */
-    .qa-items-container {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 15px;
-      justify-content: space-between;
-    }
-    
-    .qa-item-wrapper {
-      width: calc(50% - 8px);
-      page-break-inside: avoid;
-    }
-
-    .qa-item {
-      margin-bottom: 10px;
-      line-height: 1.6;
-      font-size: 10pt;
-    }
-
-    .qa-item p {
-      margin: 0;
-      line-height: 1.6;
-    }
-
-    .qa-item .question {
-      font-weight: bold;
-      color: ${colors.textDark};
-      margin-bottom: 5px;
-      display: block;
-    }
-
-    .qa-item .answer {
-      color: ${colors.textBody};
-      display: block;
-    }
-
-    /* Full Report Markdown Section */
-    .full-report-markdown-section {
-      margin-bottom: 2em;
-      padding: 25px;
-      background-color: ${colors.white};
-      border: 1px solid #e9ecef;
-      border-radius: 6px;
-      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
-      page-break-inside: avoid;
-    }
-
-    .full-report-markdown-section h2 {
-      margin-top: 0;
-      color: ${colors.textDark};
-      font-size: 22px;
-      font-weight: 600;
-      margin-bottom: 15px;
-      padding-bottom: 5px;
-      border-bottom: 2px solid ${colors.darkGreen};
-    }
-
-    /* Final Score Styling - Make it stand out */
-    .final-score {
-      background-color: #f1f3f5;
-      padding: 8px 12px;
-      border-radius: 4px;
-      font-weight: bold;
-      display: inline-block;
-      margin-top: 5px;
-      margin-bottom: 15px;
-      color: ${colors.textDark};
-    }
-
-    /* Key Findings section styling */
-    .key-findings-section {
-      background-color: ${colors.white};
-      border: 1px solid ${colors.cardBorder};
-      padding: 20px;
-      border-radius: 6px;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03);
-      margin-bottom: 20px;
-      page-break-inside: avoid;
-    }
-
-    .key-findings-section h3 {
-      color: ${colors.textDark};
-      margin-top: 0;
-      margin-bottom: 15px;
-      padding-bottom: 8px;
-      border-bottom: 2px solid ${colors.darkGreen};
-      font-size: 18pt;
-      font-weight: bold;
-      page-break-after: avoid;
-    }
-
-    .key-findings-section h4 {
-      color: ${colors.textDark};
-      margin-top: 15px;
-      margin-bottom: 12px;
-      font-weight: bold;
-      font-size: 14pt;
-      page-break-after: avoid;
-    }
-
-    /* Updated list styles for Key Findings */
-    .key-findings-section ul,
-    .key-findings-section ol {
-      list-style-type: none;
-      padding-left: 0;
-      margin-top: 10px;
-      margin-bottom: 15px;
-    }
-
-    .key-findings-section ul li,
-    .key-findings-section ol li {
-      margin-bottom: 12px;
-      page-break-inside: avoid !important;
-    }
-
-    .key-findings-section ul li::before {
-      content: none;
-    }
-    
-    /* New two-column layout for strengths and weaknesses */
-    .key-findings-columns {
-      display: flex;
-      justify-content: space-between;
-      gap: 20px;
-      margin-top: 20px;
-      page-break-inside: avoid;
-    }
-    
-    .key-findings-column {
-      flex: 1;
-      page-break-inside: avoid;
-    }
-
-    /* Print-Specific Styles */
-    @media print {
-      body {
-        margin: 0;
-        padding: 0;
-      }
-
-      .no-break {
-        page-break-inside: avoid !important;
-      }
-
-      h1, h2, h3, h4 {
-        page-break-after: avoid;
-        page-break-inside: avoid;
-      }
-
-      p {
-        orphans: 3;
-        widows: 3;
-      }
-    }
-
-    /* Empty plan message styling */
-    .empty-plan-message {
-      padding: 15px;
-      background-color: ${colors.lightMint};
-      border-radius: 6px;
-      border-left: 4px solid ${colors.darkGreen};
-      margin: 15px 0;
-      font-size: 10pt;
-    }
-
-    .empty-plan-message p {
-      margin: 0;
-      color: ${colors.textDark};
-      font-style: italic;
-    }
-
-    /* Footer */
-    .footer {
-      text-align: center;
-      margin-top: 2em;
-      padding-top: 1em;
-      border-top: 1px solid ${colors.lightMint};
-      font-size: 8pt;
-      color: ${colors.textDark};
-      font-family: 'Inter', sans-serif;
-    }
-    
-    /* Markdown content styling */
-    .section-intro {
-      margin-bottom: 15px;
-      line-height: 1.6;
-      color: ${colors.textDark};
-      font-size: 10pt;
-    }
-
-    .markdown-content {
-      margin-bottom: 1.5em;
-    }
-
-    .markdown-content h2,
-    .markdown-content h3 {
-      font-size: 18px;
-      font-weight: 600;
-      color: ${colors.textDark};
-      margin-top: 25px;
-      margin-bottom: 12px;
-      padding-bottom: 5px;
-      border-bottom: 1px solid ${colors.lightMint};
-    }
-
-    .markdown-content h4,
-    .markdown-content h5,
-    .markdown-content h6 {
-      margin-top: 15px;
-      margin-bottom: 8px;
-      color: ${colors.textDark};
-      font-weight: 600;
-    }
-
-    .markdown-content p {
-      margin-bottom: 12px;
-      line-height: 1.6;
-      font-size: 10pt;
-      color: ${colors.textBody};
-    }
-
-    .markdown-content ul,
-    .markdown-content ol {
-      margin-bottom: 1em;
-      padding-left: 0;
-      list-style-type: none;
-    }
-
-    .markdown-content ul li {
-      position: relative;
-      padding: 12px 12px 12px 30px;
-      list-style-type: none;
-      margin-bottom: 10px;
-      line-height: 1.6;
-      background-color: #f8f9fa;
-      border: 1px solid #dee2e6;
-      border-radius: 4px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-      page-break-inside: avoid !important;
-    }
-
-    .markdown-content ul li::before {
-      content: '•';
-      color: ${colors.darkGreen};
-      font-weight: bold;
-      position: absolute;
-      left: 12px;
-    }
-
-    .markdown-content ol li {
-      list-style-position: outside;
-      margin-bottom: 10px;
-      line-height: 1.6;
-      padding: 12px 12px 12px 12px;
-      background-color: #f8f9fa;
-      border: 1px solid #dee2e6;
-      border-radius: 4px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-      margin-left: 20px;
-      page-break-inside: avoid !important;
-    }
-
-    /* Learning Path and Resources section styling */
-    .learning-path-section {
-      margin-bottom: 2em;
-    }
-    
-    .learning-path-columns {
-      display: flex;
-      justify-content: space-between;
-      gap: 20px;
-      margin-top: 20px;
-      page-break-inside: avoid;
-    }
-    
-    .learning-path-column {
-      flex: 1;
-      page-break-inside: avoid;
-    }
-    
-    .learning-path-column h4 {
-      color: ${colors.textDark};
-      margin-top: 0;
-      margin-bottom: 12px;
-      font-weight: bold;
-      font-size: 14pt;
-      page-break-after: avoid;
-      text-align: center;
-      padding-bottom: 8px;
-      border-bottom: 1px solid ${colors.lightMint};
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-  <!-- Header -->
-  <div class="main-header">
-    <h1>AI Efficiency Scorecard</h1>
-    <p>A comprehensive assessment of AI effectiveness and strategic opportunities</p>
-  </div>
-  
-  <!-- Client Information -->
-  <div class="info-section">
-    <div class="info-card">
-      <h3>Client Information</h3>
-      <p><strong>Name:</strong> ${UserInformation.UserName}</p>
-      <p><strong>Company:</strong> ${UserInformation.CompanyName}</p>
-      <p><strong>Industry:</strong> ${UserInformation.Industry}</p>
-      <p><strong>Email:</strong> ${UserInformation.Email}</p>
-    </div>
-    
-    <div class="info-card">
-      <h3>Overall Assessment</h3>
-      ${ScoreInformation.FinalScore !== null ? `<p><strong>Final Score:</strong> ${ScoreInformation.FinalScore}/100</p>` : ''}
-      <p><strong>Report ID:</strong> ${ScoreInformation.ReportID}</p>
-      <p><strong>Date:</strong> ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-    </div>
-  </div>
-
-  <!-- Overall Tier Section -->
-  <div class="tier-card-container">
-    <h3>Your AI Maturity Tier</h3>
-    <div class="overall-tier-section">
-      <div class="tier-value">${ScoreInformation.AITier}</div>
-      <div class="tier-label">Overall Assessment Result</div>
-    </div>
-  </div>
-
-  <!-- Assessment Results Section -->
-  <div class="assessment-results-section">
-    <h3>Your Assessment Results</h3>
-    <div class="intro-text">
-      ${UserInformation.UserName}, your organization is at the <strong>${ScoreInformation.AITier}</strong> tier of AI maturity. ${tierDescription}
-    </div>
-
-    <div class="findings-container">
-      <div class="strengths-section">
-        <h4>Your Strengths</h4>
-        ${strengths.length > 0 ? `<ul>
-          ${strengths.map(strength => `<li class="list-item-block">${strength}</li>`).join('\n')}
-        </ul>` : '<p>No specific strengths were identified in the assessment.</p>'}
-      </div>
-      
-      <div class="focus-areas-section">
-        <h4>Focus Areas</h4>
-        ${weaknesses.length > 0 ? `<ul>
-          ${weaknesses.map(weakness => `<li class="list-item-block">${weakness}</li>`).join('\n')}
-        </ul>` : '<p>No specific focus areas were identified in the assessment.</p>'}
-      </div>
-    </div>
-
-    <div class="next-steps-summary">
-      <p>
-        Explore your detailed results and recommendations in the sections of this report. We've created a personalized action plan to help advance your AI maturity.
-      </p>
-    </div>
-  </div>
-
-  <!-- Full Report Markdown Section -->
-  <div class="full-report-markdown-section">
-    <h2>Full Report Details</h2>
-    <p class="section-intro">
-      Below is the complete content of your AI Efficiency Scorecard report:
-    </p>
-    <div class="markdown-content">
-      ${fullReportHtml}
-    </div>
-  </div>
-
-  <!-- Strategic Action Plan Section -->
-  <div class="action-plan-section">
-    <h2>Strategic Action Plan</h2>
-    <p class="section-intro">
-      Based on your assessment results, we recommend the following strategic actions to improve your AI maturity:
-    </p>
-    
-    <!-- Dynamic Strategic Action Plan -->
-    ${(() => {
-      const actionItems = extractStrategicPlan(FullReportMarkdown);
-      console.log(`Rendering Strategic Action Plan with ${actionItems.length} items`);
-      
-      if (actionItems.length > 0) {
-        return `
-        <ul class="action-plan-list">
-          ${actionItems.map((action, index) => `
-            <li class="action-item">
-              <span class="action-number">${index + 1}</span>
-              <span class="action-text">${action}</span>
-            </li>
-          `).join('\n')}
-        </ul>`;
-      } else {
-        return `
-        <div class="empty-plan-message">
-          <p>No strategic action plan items were found in the report markdown.</p>
-        </div>`;
-      }
-    })()}
-  </div>
-
-  <!-- Assessment Q&A Section -->
-  <div class="qa-section">
-    <h2>Assessment Q&A</h2>
-    <p class="section-intro">
-      Here are the questions you were asked and your responses during the AI Efficiency Scorecard assessment:
-    </p>
-    ${(() => {
-      if (!QuestionAnswerHistory || QuestionAnswerHistory.length === 0) {
-        console.log('No QuestionAnswerHistory data available for rendering Q&A section');
-        return `
-        <div class="empty-plan-message">
-          <p>No question and answer history available for this report.</p>
-        </div>`;
-      }
-      
-      console.log(`Rendering Q&A section with ${QuestionAnswerHistory.length} items`);
-      const groupedByPhase = groupByPhase(QuestionAnswerHistory);
-      
-      if (Object.keys(groupedByPhase).length === 0) {
-        console.log('No phases found in QuestionAnswerHistory');
-        return `
-        <div class="empty-plan-message">
-          <p>Question and answer data is available but could not be organized by assessment phase.</p>
-        </div>`;
-      }
-      
-      return Object.entries(groupedByPhase).map(([phase, questions]) => {
-        console.log(`Rendering phase: ${phase} with ${questions.length} questions`);
-        return `
-          <div class="qa-phase">
-            <h3>${phase}</h3>
-            <div class="qa-items-container">
-              ${questions.map(item => {
-                try {
-                  console.log(`Rendering Q&A item: ${item.question?.substring(0, 30) || 'No question'}...`);
-                  return `
-                    <div class="qa-item-wrapper">
-                      <div class="qa-item list-item-block">
-                        <p class="question"><strong>Q:</strong> ${item.question || 'Question not available'}</p>
-                        <p class="answer"><strong>A:</strong> ${formatAnswer(item)}</p>
-                      </div>
-                    </div>
-                  `;
-                } catch (error) {
-                  console.error(`Error rendering Q&A item:`, error);
-                  return `
-                    <div class="qa-item-wrapper">
-                      <div class="qa-item list-item-block">
-                        <p class="question"><strong>Error:</strong> Failed to render this Q&A item</p>
-                      </div>
-                    </div>
-                  `;
-                }
-              }).join('\n')}
-            </div>
-          </div>
-        `;
-      }).join('\n');
-    })()}
-  </div>
-  
-  <!-- Footer -->
-  <div class="footer">
-    <div id="document-footer-content">
-      Generated by Social Garden for ${UserInformation.UserName} at ${UserInformation.CompanyName}
-      <br/>© ${new Date().getFullYear()} Social Garden - All Rights Reserved
-    </div>
-  </div>
-  </div> <!-- Close container -->
-</body>
-</html>`;
+  try {
+    // Load the full-width template (sync read for simplicity; in production, use async)
+    const fs = require('fs');
+    const path = require('path');
+    // In Next.js standalone builds, templates are in public/templates/ (which gets copied to .next/standalone/public/templates/)
+    const templatePath = path.resolve(process.cwd(), 'public/templates/template.html');
+    let template = fs.readFileSync(templatePath, 'utf8');
+
+    // Prepare dynamic content
+    const strengths = extractStrengths(FullReportMarkdown || '');
+    const weaknesses = extractWeaknesses(FullReportMarkdown || '');
+    const actionItems = extractStrategicPlan(FullReportMarkdown || '');
+    const tierDescription = getTierDescription(ScoreInformation?.AITier || '');
+
+    // Strengths/Weaknesses HTML
+    const strengthsHtml = strengths.length > 0
+      ? strengths.map(strength => `<div class="strength-item"><h5>Strength</h5><p>${strength}</p></div>`).join('\n')
+      : '<p>No specific strengths were identified in the assessment.</p>';
+    const weaknessesHtml = weaknesses.length > 0
+      ? weaknesses.map(weakness => `<div class="weakness-item"><h5>Area for Improvement</h5><p>${weakness}</p></div>`).join('\n')
+      : '<p>No specific focus areas were identified in the assessment.</p>';
+
+    // Action Plan HTML (split into 3 parts for multi-page)
+    const actionPlanChunks: string[][] = [[], [], []];
+    actionItems.forEach((item, i) => {
+      actionPlanChunks[Math.floor(i / Math.ceil(actionItems.length / 3))].push(
+        `<div class="action-item"><h4>Action ${i + 1}</h4><p>${item}</p></div>`
+      );
+    });
+    const actionPlanHtml = actionPlanChunks.map(chunk => chunk.join('\n'));
+
+    // Q&A Table HTML (split into 2 parts for multi-page)
+    const qaRows = (QuestionAnswerHistory || []).map(item =>
+      `<tr><td>${item.phaseName || ''}</td><td>${item.question || ''}</td><td>${formatAnswer(item)}</td></tr>`
+    );
+    const qaChunkSize = Math.ceil(qaRows.length / 2) || 1;
+    const qaHtml = [
+      qaRows.slice(0, qaChunkSize).join('\n'),
+      qaRows.slice(qaChunkSize).join('\n')
+    ];
+
+    // Learning Path Content
+    const learningPathSection = extractSection(FullReportMarkdown || '', 'Learning Path', ['Next Steps', 'Recommendations']);
+    const learningPathItems = extractStrategicPlan(learningPathSection);
+    const learningPathChunks: string[][] = [[], []];
+    learningPathItems.forEach((item, i) => {
+      learningPathChunks[i % 2].push(`<div class="learning-item"><p>${item}</p></div>`);
+    });
+    const learningPathHtml = learningPathChunks.map(chunk => chunk.join('\n'));
+
+    // Detailed Analysis Content
+    const analysisSection = extractSection(FullReportMarkdown || '', 'Analysis', ['Conclusion', 'Summary', 'Learning Path']);
+    const analysisItems = extractStrategicPlan(analysisSection);
+    const analysisChunks: string[][] = [[], [], [], []];
+    analysisItems.forEach((item, i) => {
+      analysisChunks[i % 4].push(`<div class="analysis-item"><p>${item}</p></div>`);
+    });
+    const detailedAnalysisHtml = analysisChunks.map(chunk => chunk.join('\n'));
+
+    // Replace placeholders in the template (matching the presentation template format)
+    template = template
+      .replace(/{{UserName}}/g, UserInformation?.UserName || 'N/A')
+      .replace(/{{CompanyName}}/g, UserInformation?.CompanyName || 'N/A')
+      .replace(/{{Industry}}/g, UserInformation?.Industry || 'N/A')
+      .replace(/{{UserEmail}}/g, UserInformation?.Email || 'N/A')
+      .replace(/{{AITier}}/g, ScoreInformation?.AITier || 'N/A')
+      .replace(/{{FinalScore}}/g, ScoreInformation?.FinalScore !== null ? String(ScoreInformation.FinalScore) : 'N/A')
+      .replace(/{{ReportID}}/g, ScoreInformation?.ReportID || 'N/A')
+      .replace(/{{ReportDate}}/g, new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }))
+      .replace(/{{{STRENGTHS_CONTENT}}}/g, strengthsHtml)
+      .replace(/{{{CHALLENGES_CONTENT}}}/g, weaknessesHtml)
+      .replace(/{{{ACTION_PLAN_CONTENT_PART_1}}}/g, actionPlanHtml[0] || '')
+      .replace(/{{{ACTION_PLAN_CONTENT_PART_2}}}/g, actionPlanHtml[1] || '')
+      .replace(/{{{ACTION_PLAN_CONTENT_PART_3}}}/g, actionPlanHtml[2] || '')
+      .replace(/{{{QA_CONTENT_PART_1}}}/g, qaHtml[0] || '')
+      .replace(/{{{QA_CONTENT_PART_2}}}/g, qaHtml[1] || '')
+      .replace(/{{{LEARNING_PATH_CONTENT_PART_1}}}/g, learningPathHtml[0] || '')
+      .replace(/{{{LEARNING_PATH_CONTENT_PART_2}}}/g, learningPathHtml[1] || '')
+      .replace(/{{{DETAILED_ANALYSIS_CONTENT_PART_1}}}/g, detailedAnalysisHtml[0] || '')
+      .replace(/{{{DETAILED_ANALYSIS_CONTENT_PART_2}}}/g, detailedAnalysisHtml[1] || '')
+      .replace(/{{{DETAILED_ANALYSIS_CONTENT_PART_3}}}/g, detailedAnalysisHtml[2] || '')
+      .replace(/{{{DETAILED_ANALYSIS_CONTENT_PART_4}}}/g, detailedAnalysisHtml[3] || '');
+
+    return template;
+  } catch (error) {
+    console.error('Error generating HTML:', error);
+    throw new Error(`Failed to generate scorecard HTML: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }

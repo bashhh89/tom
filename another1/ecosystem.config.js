@@ -1,26 +1,35 @@
 module.exports = {
   apps: [
     {
-      name: 'aiscorecard',
-      script: 'node_modules/next/dist/bin/next',
-      args: 'start -p 3007',
-      cwd: '/root/newfixsg',
-      instances: 'max',
-      exec_mode: 'cluster',
+      name: 'sg-ready-pdf',
+      script: '.next/standalone/server.js',
+      cwd: '/root/tom/another1',
+      instances: 1,
+      exec_mode: 'fork',
       env: {
         NODE_ENV: 'production',
-        PORT: 3007
+        PORT: 3006
       },
       env_production: {
         NODE_ENV: 'production',
-        PORT: 3007
+        PORT: 3006
       },
-      max_memory_restart: '1G',
-      error_file: '/root/logs/aiscorecard-error.log',
-      out_file: '/root/logs/aiscorecard-out.log',
-      log_file: '/root/logs/aiscorecard-combined.log',
+      error_file: '/root/tom/another1/logs/err.log',
+      out_file: '/root/tom/another1/logs/out.log',
+      log_file: '/root/tom/another1/logs/combined.log',
       time: true,
-      merge_logs: true
+      max_memory_restart: '1G',
+      restart_delay: 4000,
+      max_restarts: 10,
+      min_uptime: '10s',
+      watch: false,
+      ignore_watch: [
+        'node_modules',
+        'logs',
+        '.next',
+        '.git'
+      ],
+      env_file: '/root/tom/another1/.env.local'
     }
   ]
 }; 

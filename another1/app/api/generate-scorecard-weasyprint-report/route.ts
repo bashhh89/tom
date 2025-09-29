@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { generateScorecardHTMLv5 as generateScorecardHTML } from '@/lib/html-generation/scorecard-html-v5';
+import { generateScorecardHTML } from './html-generator';
 
 /**
  * Generate PDF using WeasyPrint service (self-hosted)
@@ -8,28 +8,16 @@ import { generateScorecardHTMLv5 as generateScorecardHTML } from '@/lib/html-gen
  */
 async function generatePDFWithWeasyPrint(html: string): Promise<Buffer> {
   try {
-    // WeasyPrint service URL
-    const weasyPrintServiceUrl = process.env.WEASYPRINT_SERVICE_URL || 'http://168.231.115.219:5001/generate-pdf';
+  // WeasyPrint service URL - use the correct /pdf endpoint
+  const weasyPrintServiceUrl = process.env.WEASYPRINT_SERVICE_URL || 'https://socialgarden-theweasyprint.ul2dku.easypanel.host/pdf';
     
-    // Make request to WeasyPrint service
+    // Make request to WeasyPrint service using simple HTML body
     const response = await fetch(weasyPrintServiceUrl, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'text/html',
       },
-      body: JSON.stringify({
-        html: html,
-        options: {
-          presentational_hints: true,
-          optimize_size: ['fonts', 'images'],
-          font_config: {
-            font_map: {
-              'Plus Jakarta Sans': '/app/fonts/PlusJakartaSans-Regular.ttf',
-              'Plus Jakarta Sans Bold': '/app/fonts/PlusJakartaSans-Bold.ttf'
-            }
-          }
-        }
-      }),
+      body: html,
     });
 
     if (!response.ok) {
@@ -52,6 +40,10 @@ export async function POST(request: Request) {
     
     // Generate HTML using the scorecard HTML generator (reusing v6 generator)
     const html = await generateScorecardHTML(reportData);
+    
+    // Debug: Save HTML to file for inspection
+    require('fs').writeFileSync('/tmp/debug-generated.html', html);
+    console.log('DEBUG: HTML saved to /tmp/debug-generated.html, length:', html.length);
     
     // Generate PDF from HTML
     const pdfBuffer = await generatePDFWithWeasyPrint(html);

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI Efficiency Scorecard: {{CompanyName}}</title>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Using web-safe fonts for better WeasyPrint compatibility -->
   <style>
     /* CSS Reset and Base Styles */
     /* CSS Reset and Base Styles */
@@ -56,7 +56,7 @@
     
     /* Core Typography */
     body {
-      font-family: 'Plus Jakarta Sans', Arial, sans-serif;
+      font-family: Arial, Helvetica, sans-serif;
       line-height: 1.6;
       color: var(--primary-dark);
       background-color: var(--white);
@@ -262,7 +262,7 @@
     @page {
       @bottom-center {
         content: "AI Efficiency Scorecard | Page " counter(page) " of " counter(pages);
-        font-family: 'Plus Jakarta Sans', Arial, sans-serif;
+        font-family: Arial, Helvetica, sans-serif;
         font-size: var(--text-xs);
         color: var(--gray-600);
         padding-top: var(--space-2);

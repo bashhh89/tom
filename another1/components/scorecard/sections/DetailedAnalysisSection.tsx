@@ -171,7 +171,7 @@ const DetailedAnalysisSection: React.FC<DetailedAnalysisSectionProps> = ({
         <CardContent>
           <div className="prose prose-lg max-w-none text-sg-dark-teal/80">
             <p>
-              This detailed breakdown shows your performance across key dimensions of AI maturity. 
+              This detailed breakdown shows your performance across key dimensions of AI efficiency. 
               For each category, we analyze your strengths, challenges, and provide specific insights to help guide your improvement efforts.
             </p>
           </div>

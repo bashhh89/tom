@@ -30,58 +30,9 @@ export default function WeasyprintPDFButton({
     try {
       setIsLoading(true);
       
-      // If we have reportId, use the GET endpoint
-      if (reportId) {
-        const response = await fetch(`/api/generate-scorecard-weasyprint-report/download-pdf?reportId=${reportId}`);
-        
-        if (!response.ok) {
-          let errorMessage = 'Failed to generate PDF';
-          
-          // Try to parse error as JSON, but handle cases where API returns HTML
-          try {
-            // Check content type first
-            const contentType = response.headers.get('content-type');
-            if (contentType && contentType.includes('application/json')) {
-              const errorData = await response.json();
-              
-              // Check for specific error messages that might indicate connection issues
-              if (errorData.details && typeof errorData.details === 'string' && 
-                  (errorData.details.includes('ECONNREFUSED') || 
-                   errorData.details.includes('WeasyPrint service'))) {
-                throw new Error('PDF service is currently unavailable. Please try again later.');
-              }
-              
-              errorMessage = errorData.error || errorMessage;
-            } else {
-              // For non-JSON responses, use status text or a generic message
-              errorMessage = response.statusText || `Server error: ${response.status}`;
-            }
-          } catch (parseError) {
-            // If parsing fails, use status code in error message
-            console.error('Error parsing error response:', parseError);
-            errorMessage = `Server error: ${response.status}`;
-          }
-          
-          throw new Error(errorMessage);
-        }
-        
-        const pdfBlob = await response.blob();
-        const url = window.URL.createObjectURL(pdfBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `ai-scorecard-${reportId}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-        
-        toast.success('PDF Downloaded', {
-          description: 'Your AI Efficiency Assessment PDF has been downloaded.',
-        });
-      }
-      // If we have scorecardData, use the POST endpoint
-      else if (scorecardData) {
-        const response = await fetch('/api/generate-scorecard-weasyprint-report/download-pdf', {
+      // Only support POSTing scorecardData to the working endpoint
+      if (scorecardData) {
+        const response = await fetch('/api/generate-scorecard-weasyprint-report', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -138,10 +89,8 @@ export default function WeasyprintPDFButton({
         toast.success('PDF Downloaded', {
           description: 'Your AI Efficiency Assessment PDF has been downloaded.',
         });
-      }
-      // If neither reportId nor scorecardData is provided, show an error
-      else {
-        throw new Error('Either reportId or scorecardData must be provided');
+      } else {
+        throw new Error('Scorecard data must be provided to generate PDF');
       }
     } catch (error) {
       console.error('Error downloading PDF:', error);
