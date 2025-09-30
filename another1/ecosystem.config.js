@@ -1,24 +1,25 @@
 module.exports = {
   apps: [
     {
-      name: 'aiscorecard',
-      script: 'node_modules/next/dist/bin/next',
-      args: 'start -p 3007',
-      cwd: '/root/newfixsg',
-      instances: 'max',
-      exec_mode: 'cluster',
+      name: 'scorecard-socialgarden',
+      script: '.next/standalone/server.js',
+      cwd: '/root/tom/another1',
+      instances: 1,
+      exec_mode: 'fork',
       env: {
         NODE_ENV: 'production',
-        PORT: 3007
+        PORT: 3008,
+        HOSTNAME: '0.0.0.0'
       },
       env_production: {
         NODE_ENV: 'production',
-        PORT: 3007
+        PORT: 3008,
+        HOSTNAME: '0.0.0.0'
       },
       max_memory_restart: '1G',
-      error_file: '/root/logs/aiscorecard-error.log',
-      out_file: '/root/logs/aiscorecard-out.log',
-      log_file: '/root/logs/aiscorecard-combined.log',
+      error_file: '/root/tom/another1/logs/scorecard-error.log',
+      out_file: '/root/tom/another1/logs/scorecard-out.log',
+      log_file: '/root/tom/another1/logs/scorecard-combined.log',
       time: true,
       merge_logs: true
     }

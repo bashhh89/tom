@@ -38,7 +38,7 @@ export default function DebugSessionPage() {
   };
 
   // Handle manual input changes for report markdown
-  const handleReportChange = (e: React.Changeable<HTMLTextAreaElement>) => {
+  const handleReportChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setReportMarkdown(e.target.value);
   };
 
