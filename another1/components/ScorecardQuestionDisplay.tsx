@@ -598,6 +598,7 @@ Provide a realistic answer for a ${testPersonaTier} tier organization in the ${i
     
     // Force disable in production unless explicitly enabled
     const isProd = typeof window !== 'undefined' && process.env.NODE_ENV === 'production';
+    // MODIFIED: Allow auto-complete if explicitly enabled via env var, even in production
     const forceDisabled = isProd && process.env.NEXT_PUBLIC_ENABLE_AUTO_COMPLETE !== 'true';
     
     if (forceDisabled) {
@@ -607,6 +608,7 @@ Provide a realistic answer for a ${testPersonaTier} tier organization in the ${i
 
   // Force disable in production unless explicitly enabled
   const isProd = typeof window !== 'undefined' && process.env.NODE_ENV === 'production';
+  // MODIFIED: Allow auto-complete if explicitly enabled via env var, even in production
   const forceDisabled = isProd && process.env.NEXT_PUBLIC_ENABLE_AUTO_COMPLETE !== 'true';
   
   return (
