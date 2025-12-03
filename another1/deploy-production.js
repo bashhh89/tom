@@ -40,9 +40,6 @@ process.env.PORT = process.env.PORT || '80';
 // Enable production logs for debugging
 process.env.ENABLE_PRODUCTION_LOGS = 'true';
 
-// FORCE ENABLE AUTO-COMPLETE FOR TESTING ON EASYPANEL
-process.env.NEXT_PUBLIC_ENABLE_AUTO_COMPLETE = 'true';
-
 console.log('Environment variables loaded:');
 console.log(`- NODE_ENV: ${process.env.NODE_ENV}`);
 console.log(`- PORT: ${process.env.PORT}`);
