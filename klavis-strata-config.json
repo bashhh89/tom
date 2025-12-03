@@ -1,9 +1,0 @@
-{
-  "name": "klavis-strata",
-  "type": "http",
-  "url": "https://strata.klavis.ai/mcp/?strata_id=8f2d8f1b-37cc-479a-b598-e7505ed32203",
-  "port": 7567,
-  "endpoint": "/mcp",
-  "description": "Klavis Strata MCP Server for AI model control",
-  "version": "1.0.0"
-}
