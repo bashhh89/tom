@@ -31,7 +31,7 @@ loadEnvFile('.env.local');
 
 // Set production environment
 process.env.NODE_ENV = 'production';
-process.env.PORT = '3006';
+process.env.PORT = '80';
 
 console.log('Environment variables loaded:');
 console.log(`- NODE_ENV: ${process.env.NODE_ENV}`);
