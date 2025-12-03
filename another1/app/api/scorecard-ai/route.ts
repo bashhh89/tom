@@ -636,6 +636,10 @@ async function handleReportGeneration(history: ScorecardHistoryEntry[], industry
     const sectionsStartTime = Date.now();
     logger.backend(`🚀 Starting sequential section generation for ${reportSections.length} sections. Total estimated time: ~60-120 seconds`);
 
+    // Log memory usage before starting
+    const memoryUsage = process.memoryUsage();
+    logger.backend(`🧠 Memory usage before generation: RSS=${Math.round(memoryUsage.rss / 1024 / 1024)}MB, HeapUsed=${Math.round(memoryUsage.heapUsed / 1024 / 1024)}MB`);
+
     for (let i = 0; i < reportSections.length; i++) {
       const section = reportSections[i];
       const sectionStartTime = Date.now();
@@ -647,7 +651,15 @@ async function handleReportGeneration(history: ScorecardHistoryEntry[], industry
 
       try {
         logger.backend(`⏳ [${section.name}] Calling AI provider...`);
-        const chunk = await generateReport(sectionSystemPrompt, userPrompt);
+        
+        // Add a timeout promise to race against the generation
+        const generationPromise = generateReport(sectionSystemPrompt, userPrompt);
+        const timeoutPromise = new Promise<string>((_, reject) => 
+          setTimeout(() => reject(new Error('Section generation timed out after 45s')), 45000)
+        );
+        
+        const chunk = await Promise.race([generationPromise, timeoutPromise]);
+        
         const sectionTime = Date.now() - sectionStartTime;
 
         // Analyze chunk quality quickly
@@ -665,6 +677,13 @@ async function handleReportGeneration(history: ScorecardHistoryEntry[], industry
       } catch (error) {
         const sectionTime = Date.now() - sectionStartTime;
         logger.error(`❌ [${section.name}] FAILED - Duration: ${sectionTime/1000}s | Error: ${error instanceof Error ? error.message : String(error)}`);
+        
+        // If it's a timeout, we might want to wait a bit before the next section
+        if (error instanceof Error && error.message.includes('timed out')) {
+           logger.backend(`⚠️ Pausing for 2s after timeout before next section...`);
+           await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+        
         reportChunks.push(`## ${section.name}\n\n> Error: This section could not be generated at this time. Please try again later.`);
       }
     }

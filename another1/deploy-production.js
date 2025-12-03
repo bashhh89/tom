@@ -37,6 +37,8 @@ loadEnvFile('.env.local');
 process.env.NODE_ENV = 'production';
 // Default to port 80 if not specified (Easypanel default)
 process.env.PORT = process.env.PORT || '80';
+// Enable production logs for debugging
+process.env.ENABLE_PRODUCTION_LOGS = 'true';
 
 console.log('Environment variables loaded:');
 console.log(`- NODE_ENV: ${process.env.NODE_ENV}`);
