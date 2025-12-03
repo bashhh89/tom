@@ -592,15 +592,22 @@ Provide a realistic answer for a ${testPersonaTier} tier organization in the ${i
   
   // Inside the component, add this variable to track feature availability
   const autoCompleteFeatureEnabled = isAutoCompleteEnabled();
-  console.log(`[DEBUG] ScorecardQuestionDisplay - Auto-complete feature ${autoCompleteFeatureEnabled ? 'ENABLED' : 'DISABLED'}`);
   
+  useEffect(() => {
+    console.log(`[DEBUG] ScorecardQuestionDisplay - Auto-complete feature ${autoCompleteFeatureEnabled ? 'ENABLED' : 'DISABLED'}`);
+    
+    // Force disable in production unless explicitly enabled
+    const isProd = typeof window !== 'undefined' && process.env.NODE_ENV === 'production';
+    const forceDisabled = isProd && process.env.NEXT_PUBLIC_ENABLE_AUTO_COMPLETE !== 'true';
+    
+    if (forceDisabled) {
+      console.log('[DEBUG] Auto-complete FORCE DISABLED in production');
+    }
+  }, [autoCompleteFeatureEnabled]);
+
   // Force disable in production unless explicitly enabled
   const isProd = typeof window !== 'undefined' && process.env.NODE_ENV === 'production';
   const forceDisabled = isProd && process.env.NEXT_PUBLIC_ENABLE_AUTO_COMPLETE !== 'true';
-  
-  if (forceDisabled) {
-    console.log('[DEBUG] Auto-complete FORCE DISABLED in production');
-  }
   
   return (
     <div className="min-h-screen bg-gradient-to-br from-sg-light-mint via-white to-sg-cream-1">
